@@ -1,0 +1,360 @@
+:root {
+  --bg-app: #0b141c;
+  --bg-sidebar: #0e1821;
+  --bg-card: #182633;
+  --bg-card-2: #121e29;
+  --border: #1e3040;
+  --primary: #14a3a3;
+  --primary-bright: #2ec4c4;
+  --brand-green: #19a082;
+  --success: #3ccf8e;
+  --success-btn: #1e9e6a;
+  --warning: #e0a100;
+  --warning-bg: #45360f;
+  --danger: #e0413c;
+  --danger-strong: #c9302c;
+  --info: #7fb2ff;
+  --info-bg: #16304f;
+  --ai: #7b52d1;
+  --ai-bg: #2f2350;
+  --text: #e6eef5;
+  --text-muted: #8ea3b5;
+  color: var(--text);
+  background: var(--bg-app);
+  font-family: Inter, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg-app);
+}
+
+a:focus-visible,
+button:focus-visible,
+.ant-menu-item:focus-visible {
+  outline: 2px solid var(--primary-bright);
+  outline-offset: 2px;
+}
+
+.marca {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 16px;
+}
+
+.marca-s {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  color: #04221f;
+  background: linear-gradient(135deg, var(--primary-bright), var(--brand-green));
+}
+
+.marca small {
+  display: block;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.cabecera-app {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  background: var(--bg-sidebar) !important;
+  border-bottom: 1px solid var(--border);
+  padding-inline: 16px !important;
+}
+
+.en-vivo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+}
+
+.punto {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.punto-ok {
+  background: var(--success);
+}
+
+.quien {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.quien span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.contenido-app {
+  margin: 16px;
+  padding: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-height: calc(100vh - 112px);
+}
+
+.sider-app {
+  background: var(--bg-sidebar) !important;
+  border-right: 1px solid var(--border);
+}
+
+.sider-app .ant-menu {
+  background: transparent;
+  border-inline-end: 0 !important;
+}
+
+.sider-app .ant-menu-item-selected {
+  background: var(--bg-card) !important;
+  border-left: 3px solid var(--primary);
+}
+
+.aviso-db {
+  margin-top: 12px;
+  color: var(--warning);
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.kpi {
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.kpi span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.kpi strong {
+  display: block;
+  font-size: 28px;
+}
+
+.kpi.morado { border-left-color: var(--ai); }
+.kpi.ambar { border-left-color: var(--warning); }
+.kpi.azul { border-left-color: var(--info); }
+.kpi.verde { border-left-color: var(--success); }
+
+.agente-sala {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.agente-elegir {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 0 0 12px;
+  padding-bottom: 4px;
+}
+
+.agente-elegir button {
+  flex: 0 0 auto;
+}
+
+.telefono {
+  width: min(100%, 360px);
+  margin: 0 auto;
+  background: #101820;
+  border: 10px solid #1c2b38;
+  border-radius: 32px;
+  min-height: 620px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgb(0 0 0 / 35%);
+}
+
+.telefono-cabeza {
+  background: #0f8f78;
+  color: #f4fffc;
+  padding: 14px 16px;
+}
+
+.telefono-cabeza small {
+  display: block;
+  opacity: 0.85;
+}
+
+.telefono-hilo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #0b141c;
+}
+
+.burbuja {
+  max-width: 85%;
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.burbuja time {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.burbuja.usuario {
+  align-self: flex-start;
+  background: #f4f1ea;
+  color: #1b242c;
+}
+
+.burbuja.agente {
+  align-self: flex-end;
+  background: #d8f5c8;
+  color: #14301c;
+}
+
+.telefono-opciones {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.telefono-opciones span,
+.telefono-pie input {
+  background: #f7f7f7;
+  color: #16324a;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.telefono-pie {
+  padding: 10px;
+  background: #101820;
+}
+
+.telefono-pie input {
+  width: 100%;
+  border: 0;
+}
+
+.agente-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.agente-caja {
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.agente-fila {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.agente-fila span {
+  color: var(--text-muted);
+}
+
+.chip {
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 13px;
+}
+
+.chip.ok { background: #143c32; color: #8ee0c0; }
+.chip.aviso { background: var(--warning-bg); color: #f0d48a; }
+.chip.ia { background: var(--ai-bg); color: #d7c6ff; }
+
+.agente-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 800px) {
+  .agente-sala {
+    grid-template-columns: 1fr;
+  }
+
+  .telefono {
+    max-width: none;
+    min-height: 70vh;
+    border-width: 6px;
+    border-radius: 24px;
+  }
+}
+
+.saltar {
+  position: absolute;
+  left: 8px;
+  top: -40px;
+  background: var(--primary);
+  color: #04221f;
+  padding: 8px;
+}
+
+.saltar:focus {
+  top: 8px;
+}
+
+.login-panel {
+  max-width: 440px;
+  margin: 48px auto;
+  padding: 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+@media (max-width: 991px) {
+  .sider-app:not(.ant-layout-sider-collapsed) {
+    position: fixed !important;
+    z-index: 200;
+    height: 100vh;
+    left: 0;
+    top: 0;
+  }
+
+  .cabecera-app {
+    padding-left: 56px !important;
+  }
+
+  .quien span {
+    display: none;
+  }
+}

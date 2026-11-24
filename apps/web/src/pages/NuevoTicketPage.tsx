@@ -1,0 +1,157 @@
+import { Button, Form, Input, InputNumber, Select, Switch } from 'antd';
+import { useEffect, useState } from 'react';
+import { ErrorHttp, api } from '../api/http';
+
+type Categoria = { id: string; nombre: string; subcategorias: { id: string; nombre: string }[] };
+type Sede = { id: string; nombre: string; ubicaciones: { id: string; nombre: string; piso: string | null }[] };
+type Equipo = { id: string; placa: string | null; tipo: string };
+
+export function NuevoTicketPage() {
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [sedes, setSedes] = useState<Sede[]>([]);
+  const [equipos, setEquipos] = useState<Equipo[]>([]);
+  const [categoriaId, setCategoriaId] = useState<string>();
+  const [sedeId, setSedeId] = useState<string>();
+  const [aviso, setAviso] = useState('');
+  const [sugerencias, setSugerencias] = useState<{ id: string; codigo: string; titulo: string; pasos: string }[]>([]);
+  const [numero, setNumero] = useState('');
+
+  useEffect(() => {
+    Promise.all([
+      api<Categoria[]>('/api/catalogos/categorias'),
+      api<Sede[]>('/api/catalogos/sedes'),
+      api<Equipo[]>('/api/catalogos/equipos'),
+    ])
+      .then(([cats, listaSedes, listaEquipos]) => {
+        setCategorias(cats);
+        setSedes(listaSedes);
+        setEquipos(listaEquipos);
+      })
+      .catch((error: unknown) => setAviso(error instanceof ErrorHttp ? error.message : 'No se cargaron los catálogos.'));
+  }, []);
+
+  useEffect(() => {
+    if (!categoriaId) {
+      setSugerencias([]);
+      return;
+    }
+    api<{ id: string; codigo: string; titulo: string; pasos: string }[]>(
+      `/api/conocimiento/sugerencias?categoriaId=${categoriaId}`,
+    )
+      .then(setSugerencias)
+      .catch(() => setSugerencias([]));
+  }, [categoriaId]);
+  const subcategorias = categorias.find((item) => item.id === categoriaId)?.subcategorias ?? [];
+  const ubicaciones = sedes.find((item) => item.id === sedeId)?.ubicaciones ?? [];
+
+  async function enviar(valores: {
+    categoriaId: string;
+    subcategoriaId?: string;
+    titulo: string;
+    descripcion: string;
+    ubicacionId: string;
+    equipoId?: string;
+    puedeTrabajar: boolean;
+    personas: number;
+    areaCompleta: boolean;
+  }) {
+    try {
+      const creado = await api<{ numero: string; prioridad: string }>('/api/tickets', {
+        method: 'POST',
+        body: { ...valores, puedeTrabajar: valores.puedeTrabajar ?? true, areaCompleta: valores.areaCompleta ?? false },
+      });
+      setNumero(`${creado.numero} · prioridad ${creado.prioridad}`);
+      setAviso('');
+    } catch (error) {
+      setAviso(error instanceof ErrorHttp ? error.message : 'No se pudo crear el caso.');
+    }
+  }
+
+  return (
+    <section>
+      <h1>Nuevo ticket</h1>
+      <p>Cuéntanos qué pasa con el equipo, la red o un programa. No hace falta un artículo de ayuda para enviarlo.</p>
+      {aviso && <p className="aviso-db">{aviso}</p>}
+      {numero && <p>Caso creado: {numero}</p>}
+      {sugerencias.length > 0 && (
+        <aside>
+          <h2>Antes de enviar, mira esto</h2>
+          <ul>
+            {sugerencias.map((articulo) => (
+              <li key={articulo.id}>
+                <strong>{articulo.codigo} · {articulo.titulo}</strong>
+                <p>{articulo.pasos}</p>
+              </li>
+            ))}
+          </ul>
+          <p>Puedes enviar el caso aunque no te haya servido.</p>
+        </aside>
+      )}
+      <Form layout="vertical" onFinish={enviar} initialValues={{ puedeTrabajar: true, personas: 1, areaCompleta: false }}>
+        <Form.Item name="titulo" label="Qué necesitas" rules={[{ required: true, min: 4, message: 'Describe el caso en una frase' }]}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="descripcion" label="Qué está pasando" rules={[{ required: true, min: 8, message: 'Cuéntanos un poco más' }]}>
+          <Input.TextArea rows={4} />
+        </Form.Item>
+        <Form.Item name="categoriaId" label="Categoría" rules={[{ required: true, message: 'Elige una categoría' }]}>
+          <Select onChange={setCategoriaId}>
+            {categorias.map((item) => (
+              <Select.Option key={item.id} value={item.id}>
+                {item.nombre}
+              </Select.Option>
+            ))}
+          </Select>
+        </Form.Item>
+        <Form.Item name="subcategoriaId" label="Detalle">
+          <Select allowClear>
+            {subcategorias.map((item) => (
+              <Select.Option key={item.id} value={item.id}>
+                {item.nombre}
+              </Select.Option>
+            ))}
+          </Select>
+        </Form.Item>
+        <Form.Item label="Sede">
+          <Select
+            id="sede"
+            onChange={setSedeId}
+            value={sedeId}
+            options={sedes.map((item) => ({ value: item.id, label: item.nombre }))}
+            optionRender={(opcion) => opcion.label}
+          />
+        </Form.Item>
+        <Form.Item name="ubicacionId" label="Dónde está" rules={[{ required: true, message: 'Elige la ubicación' }]}>
+          <Select>
+            {ubicaciones.map((item) => (
+              <Select.Option key={item.id} value={item.id}>
+                {item.piso ? `${item.nombre} · piso ${item.piso}` : item.nombre}
+              </Select.Option>
+            ))}
+          </Select>
+        </Form.Item>
+        <Form.Item name="equipoId" label="Equipo, si aplica">
+          <Select allowClear>
+            {equipos.map((item) => (
+              <Select.Option key={item.id} value={item.id}>
+                {item.placa ?? item.tipo}
+              </Select.Option>
+            ))}
+          </Select>
+        </Form.Item>
+        <Form.Item name="puedeTrabajar" label="¿Puedes seguir trabajando?" valuePropName="checked">
+          <Switch />
+        </Form.Item>
+        <Form.Item name="personas" label="¿A cuántas personas afecta?">
+          <InputNumber min={1} />
+        </Form.Item>
+        <Form.Item name="areaCompleta" label="¿Se detuvo el área completa?" valuePropName="checked">
+          <Switch />
+        </Form.Item>
+        <Button type="primary" htmlType="submit">
+          Enviar caso
+        </Button>
+      </Form>
+    </section>
+  );
+}

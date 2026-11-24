@@ -1,0 +1,29 @@
+---
+description: Antes de cada pedido, guarda una copia de la versión anterior y, al terminar, sube el cambio a GitHub.
+alwaysApply: true
+---
+
+# Subir lo pedido y respaldar la versión anterior
+
+Cada requerimiento que el usuario pida en este repositorio se sube a `origin` (`https://github.com/Ogaza-Jussef/SIS-Tickets.git`), rama `main`. No esperes un mensaje aparte de commit o push.
+
+## Antes de modificar
+
+1. Crea `backup/AAAA-MM-DD-HHMM-version-anterior/`.
+2. Guarda ahí el árbol del último commit (`git archive`), no la carpeta de trabajo a medias.
+3. No copies `node_modules`, `dist`, `.env`, `.verify` ni `backups`.
+4. `backup/` se queda en la máquina. No la subas al remoto.
+
+## Al terminar
+
+1. Revisa que no haya secretos (`.env`, contraseñas, cadenas de conexión, credenciales).
+2. Haz commit del trabajo pedido.
+3. Haz `git push` a `main`.
+
+## Límites
+
+- No cambies la configuración de git.
+- No uses `--force`, `--no-verify` ni reescribas la historia.
+- Si el push falla por permisos, dilo y no lo presentes como subido.
+
+Ejemplo de carpeta: `backup/2026-11-24-1635-version-anterior/`.

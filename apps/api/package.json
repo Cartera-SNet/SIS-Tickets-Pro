@@ -1,0 +1,57 @@
+{
+  "name": "@sis/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/with-root-env.cjs npx prisma generate && tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "start:dev": "tsx watch src/main.ts",
+    "lint": "eslint src prisma/seed.ts",
+    "test": "node scripts/with-root-env.cjs npx prisma generate && jest",
+    "migrate": "node scripts/with-root-env.cjs npx prisma migrate deploy",
+    "migrate:sql": "node scripts/with-root-env.cjs npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script",
+    "seed": "tsx prisma/seed.ts",
+    "prisma:generate": "node scripts/with-root-env.cjs npx prisma generate"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-express": "^11.1.6",
+    "@nestjs/platform-socket.io": "^11.2.11",
+    "@nestjs/websockets": "^11.2.11",
+    "@prisma/client": "^6.19.0",
+    "@sis/shared": "*",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
+    "dotenv": "^17.2.3",
+    "helmet": "^8.1.0",
+    "multer": "^2.5.0",
+    "pdfkit": "^0.21.0",
+    "pg-boss": "^10.4.2",
+    "qrcode": "^1.5.4",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "socket.io": "^4.8.4"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.1.6",
+    "@types/express": "^5.0.3",
+    "@types/jest": "^30.0.0",
+    "@types/multer": "^2.3.0",
+    "@types/node": "^24.10.0",
+    "@types/pdfkit": "^0.17.7",
+    "@types/qrcode": "^1.5.6",
+    "@types/supertest": "^6.0.3",
+    "eslint": "^9.39.1",
+    "jest": "^30.2.0",
+    "prisma": "^6.19.0",
+    "supertest": "^7.1.4",
+    "ts-jest": "^29.4.5",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.3"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}

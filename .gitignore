@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.local
+uploads/
+apps/api/storage/
+.verify/
+backups/
+backup/
+*.log
+.DS_Store
+apps/api/dist/
+apps/web/dist/
+packages/shared/dist/

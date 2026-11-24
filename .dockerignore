@@ -1,0 +1,23 @@
+node_modules
+**/node_modules
+**/dist
+coverage
+.git
+.github
+.cursor
+.env
+.env.*
+!.env.example
+uploads
+apps/api/storage
+backup
+backups
+.verify
+*.log
+.DS_Store
+# Documentación y material de apoyo: no hace falta en la imagen.
+*.docx
+Login.zip
+Prompt_SIS_Mesa_de_Ayuda_v3.1.md
+Backlog_Sprints_Mesa_de_Ayuda_SIS.md
+Epicas.md

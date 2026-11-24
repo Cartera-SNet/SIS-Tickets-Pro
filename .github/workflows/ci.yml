@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sis
+          POSTGRES_PASSWORD: sis
+          POSTGRES_DB: sis_tickets
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sis -d sis_tickets"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://sis:sis@localhost:5432/sis_tickets?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm run migrate
+
+  deploy-staging:
+    needs: verificar
+    if: github.ref == 'refs/heads/main' && vars.STAGING_HOST != ''
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/deploy-staging.mjs
+        env:
+          STAGING_HOST: ${{ vars.STAGING_HOST }}
+          STAGING_USER: ${{ vars.STAGING_USER }}
+          STAGING_PATH: ${{ vars.STAGING_PATH }}

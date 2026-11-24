@@ -1,0 +1,840 @@
+// Modelo inicial del sprint 1. Tablas de la sección 14 del prompt.
+// Historial y actas no llevan borrado lógico.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Rol {
+  SOLICITANTE
+  TECNICO
+  ADMINISTRADOR
+}
+
+enum NivelAtencion {
+  N1
+  N2
+  N3
+}
+
+enum EstadoAprobacion {
+  PENDIENTE
+  APROBADO
+  RECHAZADO
+}
+
+enum Canal {
+  WEB
+  WHATSAPP
+  CORREO
+}
+
+enum TipoTicket {
+  CORRECTIVO
+  PREVENTIVO
+}
+
+enum EstadoTicket {
+  NUEVO
+  EN_ATENCION_N1
+  ESCALADO
+  ASIGNADO
+  EN_SITIO
+  EN_PROCESO
+  ESPERANDO_USUARIO
+  ESPERANDO_REPUESTO
+  RESUELTO
+  CERRADO
+  PENDIENTE_DE_FIRMA
+  CERRADO_CON_ACTA
+  CERRADO_SIN_FIRMA
+  FIRMA_RECHAZADA
+  DESCARTADO
+  CANCELADO
+  REABIERTO
+}
+
+enum EstadoOrden {
+  PROGRAMADA
+  ASIGNADA
+  EN_EJECUCION
+  PENDIENTE_DE_FIRMA
+  CERRADA_CON_ACTA
+  REPROGRAMADA
+  VENCIDA
+}
+
+enum EstadoActa {
+  PENDIENTE_DE_FIRMA
+  CERRADO_CON_ACTA
+  CERRADO_SIN_FIRMA
+  FIRMA_RECHAZADA
+}
+
+enum EstadoConocimiento {
+  BORRADOR
+  PUBLICADO
+}
+
+enum FrecuenciaPreventivo {
+  TRIMESTRAL
+  SEMESTRAL
+  ANUAL
+}
+
+enum UnidadTiempo {
+  MINUTOS
+  HORAS
+  DIAS_HABILES
+}
+
+enum AutorMensaje {
+  USUARIO
+  TECNICO
+  AGENTE_IA
+}
+
+enum EstadoEntrega {
+  PENDIENTE
+  ENVIADO
+  ENTREGADO
+  LEIDO
+  FALLIDO
+}
+
+enum TipoConfiguracion {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+}
+
+enum MetodoAuth {
+  ESCULAPIO
+  GOOGLE
+  DEV
+}
+
+enum MetodoFirma {
+  DISPOSITIVO_TECNICO
+  ENLACE
+  CORREO
+  SESION_WEB
+}
+
+enum ResultadoFirma {
+  FIRMO
+  RECHAZO
+}
+
+model TipoPersonal {
+  id                      String    @id @default(uuid()) @db.Uuid
+  nombre                  String
+  descripcion             String?   @db.Text
+  celularPermitido        Boolean   @default(true) @map("celular_permitido")
+  canalPreferido          Canal     @default(WEB) @map("canal_preferido")
+  reglaPrioridadSugerida  String?   @map("regla_prioridad_sugerida")
+  activo                  Boolean   @default(true)
+  deletedAt               DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  usuarios                Usuario[]
+
+  @@map("tipos_personal")
+}
+
+model Sede {
+  id               String       @id @default(uuid()) @db.Uuid
+  codigo           String?
+  nombre           String
+  codigoEsculapio  String?      @map("codigo_esculapio")
+  activo           Boolean      @default(true)
+  deletedAt        DateTime?    @map("deleted_at") @db.Timestamptz(6)
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  areas            Area[]
+  ubicaciones      Ubicacion[]
+  usuarios         Usuario[]
+  equipos          Equipo[]
+  tickets          Ticket[]
+  sesiones         Sesion[]
+
+  @@index([codigoEsculapio])
+  @@map("sedes")
+}
+
+model Area {
+  id                String          @id @default(uuid()) @db.Uuid
+  nombre            String
+  descripcion       String?         @db.Text
+  celularPermitido  Boolean?        @map("celular_permitido")
+  sedeId            String?         @map("sede_id") @db.Uuid
+  sede              Sede?           @relation(fields: [sedeId], references: [id], onDelete: Restrict)
+  activo            Boolean         @default(true)
+  deletedAt         DateTime?       @map("deleted_at") @db.Timestamptz(6)
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  usuarios          Usuario[]
+  equipos           Equipo[]
+  delegados         DelegadoArea[]
+
+  @@index([sedeId])
+  @@map("areas")
+}
+
+model Ubicacion {
+  id         String    @id @default(uuid()) @db.Uuid
+  sedeId     String    @map("sede_id") @db.Uuid
+  sede       Sede      @relation(fields: [sedeId], references: [id], onDelete: Restrict)
+  nombre     String
+  piso       String?
+  puesto     String?
+  activo     Boolean   @default(true)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  equipos             Equipo[]
+  tickets             Ticket[]
+  usuariosHabituales  Usuario[] @relation("UbicacionHabitual")
+
+  @@index([sedeId])
+  @@map("ubicaciones")
+}
+
+model Usuario {
+  id                         String               @id @default(uuid()) @db.Uuid
+  correoGoogle               String?              @unique @map("correo_google")
+  usuarioEsculapio           String?              @map("usuario_esculapio")
+  servidorEsculapio          String?              @map("servidor_esculapio")
+  estadoAprobacion           EstadoAprobacion     @default(PENDIENTE) @map("estado_aprobacion")
+  nombre                     String
+  celular                    String?
+  celularVerificado          Boolean              @default(false) @map("celular_verificado")
+  correoNotificaciones       String?              @map("correo_notificaciones")
+  autorizacionWhatsapp       Boolean              @default(false) @map("autorizacion_whatsapp")
+  autorizacionWhatsappVersion String?             @map("autorizacion_whatsapp_version")
+  rol                        Rol
+  esJefeArea                 Boolean              @default(false) @map("es_jefe_area")
+  tipoPersonalId             String               @map("tipo_personal_id") @db.Uuid
+  tipoPersonal               TipoPersonal         @relation(fields: [tipoPersonalId], references: [id], onDelete: Restrict)
+  areaId                     String?              @map("area_id") @db.Uuid
+  area                       Area?                @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  sedeId                     String?              @map("sede_id") @db.Uuid
+  sede                       Sede?                @relation(fields: [sedeId], references: [id], onDelete: Restrict)
+  ubicacionHabitualId        String?              @map("ubicacion_habitual_id") @db.Uuid
+  ubicacionHabitual          Ubicacion?           @relation("UbicacionHabitual", fields: [ubicacionHabitualId], references: [id], onDelete: Restrict)
+  consentimientoDatosVersion String?              @map("consentimiento_datos_version")
+  consentimientoDatosFecha   DateTime?            @map("consentimiento_datos_fecha") @db.Timestamptz(6)
+  activo                     Boolean              @default(true)
+  deletedAt                  DateTime?            @map("deleted_at") @db.Timestamptz(6)
+  createdAt                  DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  niveles                    UsuarioNivelAtencion[]
+  equiposACargo              Equipo[]             @relation("ResponsableEquipo")
+  ticketsSolicitados         Ticket[]             @relation("SolicitanteTicket")
+  ticketsAsignados           Ticket[]             @relation("ResponsableTicket")
+  escalamientos              Escalamiento[]
+  mensajes                   Mensaje[]
+  conversaciones             ConversacionIa[]
+  firmas                     Firma[]
+  adjuntos                   Adjunto[]
+  historial                  Historial[]
+  notificaciones             Notificacion[]
+  lecturas                   LecturaNotificacion[]
+  delegacionesQueOtorga      DelegadoArea[]       @relation("JefeDelegacion")
+  delegacionesRecibidas      DelegadoArea[]       @relation("DelegadoFirma")
+  codigosFirma               CodigoFirma[]
+  tokensFirma                TokenFirma[]
+  sesiones                   Sesion[]
+  ordenesAsignadas           OrdenPreventiva[]    @relation("TecnicoOrden")
+  codigosCelular             CodigoCelular[]
+
+  @@unique([usuarioEsculapio, servidorEsculapio])
+  @@index([celular])
+  @@index([sedeId])
+  @@index([rol])
+  @@map("usuarios")
+}
+
+model UsuarioNivelAtencion {
+  usuarioId String         @map("usuario_id") @db.Uuid
+  nivel     NivelAtencion
+  usuario   Usuario        @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@id([usuarioId, nivel])
+  @@map("usuarios_niveles_atencion")
+}
+
+model RolPermiso {
+  id      String @id @default(uuid()) @db.Uuid
+  rol     Rol
+  permiso String
+
+  @@unique([rol, permiso])
+  @@map("roles_permisos")
+}
+
+model Categoria {
+  id            String             @id @default(uuid()) @db.Uuid
+  nombre        String
+  activo        Boolean            @default(true)
+  deletedAt     DateTime?          @map("deleted_at") @db.Timestamptz(6)
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  subcategorias Subcategoria[]
+  tickets       Ticket[]
+  articulos     BaseConocimiento[]
+
+  @@map("categorias")
+}
+
+model Subcategoria {
+  id          String    @id @default(uuid()) @db.Uuid
+  categoriaId String    @map("categoria_id") @db.Uuid
+  categoria   Categoria @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  nombre      String
+  activo      Boolean   @default(true)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tickets     Ticket[]
+
+  @@index([categoriaId])
+  @@map("subcategorias")
+}
+
+model Prioridad {
+  id                         String       @id @default(uuid()) @db.Uuid
+  codigo                     String       @unique
+  nombre                     String
+  primeraRespuestaValor      Int          @map("primera_respuesta_valor")
+  primeraRespuestaUnidad     UnidadTiempo @map("primera_respuesta_unidad")
+  solucionValor              Int          @map("solucion_valor")
+  solucionUnidad             UnidadTiempo @map("solucion_unidad")
+  version                    Int          @default(1)
+  activo                     Boolean      @default(true)
+  createdAt                  DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tickets                    Ticket[]
+  versiones                  AnsVersion[]
+
+  @@map("prioridades")
+}
+
+model EstadoCatalogo {
+  id      String  @id @default(uuid()) @db.Uuid
+  codigo  String
+  nombre  String
+  ambito  String
+  activo  Boolean @default(true)
+
+  @@unique([ambito, codigo])
+  @@map("estados")
+}
+
+model NivelCatalogo {
+  id          String        @id @default(uuid()) @db.Uuid
+  codigo      NivelAtencion @unique
+  nombre      String
+  descripcion String?       @db.Text
+  activo      Boolean       @default(true)
+
+  @@map("niveles")
+}
+
+model Equipo {
+  id             String            @id @default(uuid()) @db.Uuid
+  placa          String?
+  serial         String?
+  tipo           String
+  marca          String?
+  modelo         String?
+  sedeId         String            @map("sede_id") @db.Uuid
+  sede           Sede              @relation(fields: [sedeId], references: [id], onDelete: Restrict)
+  areaId         String?           @map("area_id") @db.Uuid
+  area           Area?             @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  ubicacionId    String?           @map("ubicacion_id") @db.Uuid
+  ubicacion      Ubicacion?        @relation(fields: [ubicacionId], references: [id], onDelete: Restrict)
+  responsableId  String?           @map("responsable_id") @db.Uuid
+  responsable    Usuario?          @relation("ResponsableEquipo", fields: [responsableId], references: [id], onDelete: Restrict)
+  estado         String            @default("Operativo")
+  deletedAt      DateTime?         @map("deleted_at") @db.Timestamptz(6)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tickets        Ticket[]
+  ordenes        OrdenPreventiva[]
+
+  @@index([placa])
+  @@index([serial])
+  @@index([sedeId])
+  @@map("equipos")
+}
+
+model Ticket {
+  id                              String         @id @default(uuid()) @db.Uuid
+  numero                          String         @unique
+  tipo                            TipoTicket
+  canalOrigen                     Canal          @map("canal_origen")
+  solicitanteId                   String         @map("solicitante_id") @db.Uuid
+  solicitante                     Usuario        @relation("SolicitanteTicket", fields: [solicitanteId], references: [id], onDelete: Restrict)
+  categoriaId                     String?        @map("categoria_id") @db.Uuid
+  categoria                       Categoria?     @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  subcategoriaId                  String?        @map("subcategoria_id") @db.Uuid
+  subcategoria                    Subcategoria?  @relation(fields: [subcategoriaId], references: [id], onDelete: Restrict)
+  titulo                          String
+  descripcion                     String         @db.Text
+  sedeId                          String?        @map("sede_id") @db.Uuid
+  sede                            Sede?          @relation(fields: [sedeId], references: [id], onDelete: Restrict)
+  ubicacionId                     String?        @map("ubicacion_id") @db.Uuid
+  ubicacion                       Ubicacion?     @relation(fields: [ubicacionId], references: [id], onDelete: Restrict)
+  equipoId                        String?        @map("equipo_id") @db.Uuid
+  equipo                          Equipo?        @relation(fields: [equipoId], references: [id], onDelete: Restrict)
+  impactoPuedeTrabajar            Boolean?       @map("impacto_puede_trabajar")
+  impactoPersonas                 Int?           @map("impacto_personas")
+  prioridadId                     String?        @map("prioridad_id") @db.Uuid
+  prioridad                       Prioridad?     @relation(fields: [prioridadId], references: [id], onDelete: Restrict)
+  nivel                           NivelAtencion  @default(N1)
+  responsableId                   String?        @map("responsable_id") @db.Uuid
+  responsable                     Usuario?       @relation("ResponsableTicket", fields: [responsableId], references: [id], onDelete: Restrict)
+  fechaObjetivoPrimeraRespuesta   DateTime?      @map("fecha_objetivo_primera_respuesta") @db.Timestamptz(6)
+  fechaObjetivoSolucion           DateTime?      @map("fecha_objetivo_solucion") @db.Timestamptz(6)
+  solucionAplicada                String?        @map("solucion_aplicada") @db.Text
+  calificacion                    Int?
+  motivoDescarte                  String?        @map("motivo_descarte") @db.Text
+  reglaDescarte                   String?        @map("regla_descarte")
+  mensajeRedireccion              String?        @map("mensaje_redireccion") @db.Text
+  estado                          EstadoTicket   @default(NUEVO)
+  fechaCreacion                   DateTime       @default(now()) @map("fecha_creacion") @db.Timestamptz(6)
+  fechaResolucion                 DateTime?      @map("fecha_resolucion") @db.Timestamptz(6)
+  fechaCierre                     DateTime?      @map("fecha_cierre") @db.Timestamptz(6)
+  deletedAt                       DateTime?      @map("deleted_at") @db.Timestamptz(6)
+  updatedAt                       DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  escalamientos                   Escalamiento[]
+  mensajes                        Mensaje[]
+  conversaciones                  ConversacionIa[]
+  adjuntos                        Adjunto[]
+  historial                       Historial[]
+  actas                           Acta[]
+
+  @@index([estado])
+  @@index([nivel])
+  @@index([sedeId])
+  @@index([responsableId])
+  @@index([solicitanteId])
+  @@index([fechaObjetivoPrimeraRespuesta])
+  @@index([fechaObjetivoSolucion])
+  @@map("tickets")
+}
+
+model Escalamiento {
+  id            String        @id @default(uuid()) @db.Uuid
+  ticketId      String        @map("ticket_id") @db.Uuid
+  ticket        Ticket        @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  nivelOrigen   NivelAtencion @map("nivel_origen")
+  nivelDestino  NivelAtencion @map("nivel_destino")
+  motivo        String        @db.Text
+  acciones      String        @db.Text
+  usuarioId     String        @map("usuario_id") @db.Uuid
+  usuario       Usuario       @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  fecha         DateTime      @default(now()) @db.Timestamptz(6)
+
+  @@index([ticketId])
+  @@map("escalamientos")
+}
+
+model Mensaje {
+  id             String         @id @default(uuid()) @db.Uuid
+  ticketId       String         @map("ticket_id") @db.Uuid
+  ticket         Ticket         @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  autorTipo      AutorMensaje   @map("autor_tipo")
+  autorId        String?        @map("autor_id") @db.Uuid
+  autor          Usuario?       @relation(fields: [autorId], references: [id], onDelete: Restrict)
+  canal          Canal
+  contenido      String         @db.Text
+  adjuntoId      String?        @unique @map("adjunto_id") @db.Uuid
+  adjunto        Adjunto?       @relation(fields: [adjuntoId], references: [id], onDelete: Restrict)
+  estadoEntrega  EstadoEntrega  @default(PENDIENTE) @map("estado_entrega")
+  fecha          DateTime       @default(now()) @db.Timestamptz(6)
+
+  @@index([ticketId, fecha])
+  @@map("mensajes")
+}
+
+model ConversacionIa {
+  id             String    @id @default(uuid()) @db.Uuid
+  celular        String?
+  usuarioId      String?   @map("usuario_id") @db.Uuid
+  usuario        Usuario?  @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  ticketId       String?   @map("ticket_id") @db.Uuid
+  ticket         Ticket?   @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  decisiones     Json      @default("[]")
+  confianza      Decimal?  @db.Decimal(5, 4)
+  articuloId     String?   @map("articulo_id") @db.Uuid
+  articulo       BaseConocimiento? @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+  transferencia  Boolean   @default(false)
+  fecha          DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([usuarioId])
+  @@index([ticketId])
+  @@map("conversaciones_ia")
+}
+
+model BaseConocimiento {
+  id             String              @id @default(uuid()) @db.Uuid
+  codigo         String              @unique
+  titulo         String
+  categoriaId    String?             @map("categoria_id") @db.Uuid
+  categoria      Categoria?          @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  pasos          String              @db.Text
+  estado         EstadoConocimiento  @default(BORRADOR)
+  usos           Int                 @default(0)
+  efectividad    Decimal?            @db.Decimal(5, 2)
+  casosResueltos Int                 @default(0) @map("casos_resueltos")
+  reclasificaciones Int              @default(0)
+  deletedAt      DateTime?           @map("deleted_at") @db.Timestamptz(6)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  conversaciones ConversacionIa[]
+
+  @@index([estado])
+  @@map("base_conocimiento")
+}
+
+model PlantillaWhatsapp {
+  id                 String   @id @default(uuid()) @db.Uuid
+  nombre             String   @unique
+  contenido          String   @db.Text
+  idioma             String   @default("es")
+  estadoAprobacion   String   @default("pendiente") @map("estado_aprobacion")
+  activo             Boolean  @default(true)
+  deletedAt          DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("plantillas_whatsapp")
+}
+
+model MensajeEntrante {
+  idMeta    String   @id @map("id_meta")
+  telefono  String
+  tipo      String
+  recibido  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([telefono, recibido])
+  @@map("mensajes_entrantes")
+}
+
+model EnvioWhatsapp {
+  idMeta      String        @id @map("id_meta")
+  telefono    String
+  tipo        String
+  plantilla   String?
+  estado      EstadoEntrega @default(ENVIADO)
+  actualizado DateTime      @default(now()) @map("actualizado") @db.Timestamptz(6)
+
+  @@index([telefono])
+  @@map("envios_whatsapp")
+}
+
+model PlanPreventivo {
+  id               String               @id @default(uuid()) @db.Uuid
+  nombre           String
+  tipoEquipo       String               @map("tipo_equipo")
+  frecuencia       FrecuenciaPreventivo
+  anticipacionDias Int                  @default(15) @map("anticipacion_dias")
+  checklist        Json                 @default("[]")
+  activo           Boolean              @default(true)
+  deletedAt        DateTime?            @map("deleted_at") @db.Timestamptz(6)
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  ordenes          OrdenPreventiva[]
+
+  @@map("planes_preventivos")
+}
+
+model OrdenPreventiva {
+  id                String        @id @default(uuid()) @db.Uuid
+  numero            String        @unique
+  planId            String        @map("plan_id") @db.Uuid
+  plan              PlanPreventivo @relation(fields: [planId], references: [id], onDelete: Restrict)
+  equipoId          String        @map("equipo_id") @db.Uuid
+  equipo            Equipo        @relation(fields: [equipoId], references: [id], onDelete: Restrict)
+  fechaProgramada   DateTime      @map("fecha_programada") @db.Timestamptz(6)
+  tecnicoId         String?       @map("tecnico_id") @db.Uuid
+  tecnico           Usuario?      @relation("TecnicoOrden", fields: [tecnicoId], references: [id], onDelete: Restrict)
+  estado            EstadoOrden   @default(PROGRAMADA)
+  resultados        Json          @default("[]")
+  reprogramaciones  Json          @default("[]")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  actas             Acta[]
+  historial         Historial[]
+
+  @@index([estado])
+  @@index([fechaProgramada])
+  @@index([tecnicoId])
+  @@map("ordenes_preventivas")
+}
+
+model Acta {
+  id                  String      @id @default(uuid()) @db.Uuid
+  numero              String
+  version             Int         @default(1)
+  ticketId            String?     @map("ticket_id") @db.Uuid
+  ticket              Ticket?     @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  ordenId             String?     @map("orden_id") @db.Uuid
+  orden               OrdenPreventiva? @relation(fields: [ordenId], references: [id], onDelete: Restrict)
+  contenido           Json
+  estado              EstadoActa  @default(PENDIENTE_DE_FIRMA)
+  pdfRuta             String?     @map("pdf_ruta")
+  hash                String?
+  codigoVerificacion  String?     @unique @map("codigo_verificacion")
+  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  firmas              Firma[]
+  codigos             CodigoFirma[]
+  tokens              TokenFirma[]
+
+  @@unique([numero, version])
+  @@index([ticketId])
+  @@index([ordenId])
+  @@index([estado])
+  @@map("actas")
+}
+
+model Firma {
+  id                String         @id @default(uuid()) @db.Uuid
+  actaId            String         @map("acta_id") @db.Uuid
+  acta              Acta           @relation(fields: [actaId], references: [id], onDelete: Restrict)
+  firmanteId        String         @map("firmante_id") @db.Uuid
+  firmante          Usuario        @relation(fields: [firmanteId], references: [id], onDelete: Restrict)
+  rol               String
+  metodo            MetodoFirma
+  imagen            Bytes?
+  fecha             DateTime       @default(now()) @db.Timestamptz(6)
+  numeroVerificado  String?        @map("numero_verificado")
+  dispositivo       String?
+  ip                String?
+  resultado         ResultadoFirma
+  motivoRechazo     String?        @map("motivo_rechazo") @db.Text
+
+  @@index([actaId])
+  @@map("firmas")
+}
+
+model Adjunto {
+  id          String    @id @default(uuid()) @db.Uuid
+  ticketId    String?   @map("ticket_id") @db.Uuid
+  ticket      Ticket?   @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  nombre      String
+  ruta        String
+  mime        String
+  tamano      Int
+  hash        String?
+  subidoPorId String?   @map("subido_por_id") @db.Uuid
+  subidoPor   Usuario?  @relation(fields: [subidoPorId], references: [id], onDelete: Restrict)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  mensaje     Mensaje?
+
+  @@index([ticketId])
+  @@map("adjuntos")
+}
+
+model Historial {
+  id           String           @id @default(uuid()) @db.Uuid
+  ticketId     String?          @map("ticket_id") @db.Uuid
+  ticket       Ticket?          @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  ordenId      String?          @map("orden_id") @db.Uuid
+  orden        OrdenPreventiva? @relation(fields: [ordenId], references: [id], onDelete: Restrict)
+  usuarioId    String?          @map("usuario_id") @db.Uuid
+  usuario      Usuario?         @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  tipo         String
+  datosPrevios Json?            @map("datos_previos")
+  datosNuevos  Json?            @map("datos_nuevos")
+  fecha        DateTime         @default(now()) @db.Timestamptz(6)
+
+  @@index([ticketId, fecha])
+  @@index([ordenId])
+  @@map("historial")
+}
+
+model Notificacion {
+  id        String                 @id @default(uuid()) @db.Uuid
+  usuarioId String                 @map("usuario_id") @db.Uuid
+  usuario   Usuario                @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  evento    String
+  titulo    String
+  cuerpo    String                 @db.Text
+  fecha     DateTime               @default(now()) @db.Timestamptz(6)
+  entregas  NotificacionEntrega[]
+  lecturas  LecturaNotificacion[]
+
+  @@index([usuarioId, fecha])
+  @@map("notificaciones")
+}
+
+model NotificacionEntrega {
+  id              String        @id @default(uuid()) @db.Uuid
+  notificacionId  String        @map("notificacion_id") @db.Uuid
+  notificacion    Notificacion  @relation(fields: [notificacionId], references: [id], onDelete: Cascade)
+  canal           Canal
+  estado          EstadoEntrega @default(PENDIENTE)
+  detalle         String?
+  fecha           DateTime      @default(now()) @db.Timestamptz(6)
+
+  @@index([notificacionId])
+  @@map("notificaciones_entregas")
+}
+
+model LecturaNotificacion {
+  id              String       @id @default(uuid()) @db.Uuid
+  notificacionId  String       @map("notificacion_id") @db.Uuid
+  notificacion    Notificacion @relation(fields: [notificacionId], references: [id], onDelete: Cascade)
+  usuarioId       String       @map("usuario_id") @db.Uuid
+  usuario         Usuario      @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  fecha           DateTime     @default(now()) @db.Timestamptz(6)
+
+  @@unique([notificacionId, usuarioId])
+  @@map("lecturas_notificacion")
+}
+
+model Configuracion {
+  clave       String            @id
+  valor       String
+  tipo        TipoConfiguracion
+  descripcion String?           @db.Text
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("configuracion")
+}
+
+model DelegadoArea {
+  id          String   @id @default(uuid()) @db.Uuid
+  jefeId      String   @map("jefe_id") @db.Uuid
+  jefe        Usuario  @relation("JefeDelegacion", fields: [jefeId], references: [id], onDelete: Restrict)
+  delegadoId  String   @map("delegado_id") @db.Uuid
+  delegado    Usuario  @relation("DelegadoFirma", fields: [delegadoId], references: [id], onDelete: Restrict)
+  areaId      String   @map("area_id") @db.Uuid
+  area        Area     @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([delegadoId, areaId])
+  @@map("delegados_area")
+}
+
+model CodigoFirma {
+  id        String   @id @default(uuid()) @db.Uuid
+  usuarioId String   @map("usuario_id") @db.Uuid
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  actaId    String   @map("acta_id") @db.Uuid
+  acta      Acta     @relation(fields: [actaId], references: [id], onDelete: Restrict)
+  hash      String
+  expira    DateTime @db.Timestamptz(6)
+  intentos  Int      @default(0)
+
+  @@index([actaId])
+  @@map("codigos_firma")
+}
+
+model TokenFirma {
+  id          String    @id @default(uuid()) @db.Uuid
+  actaId      String    @map("acta_id") @db.Uuid
+  acta        Acta      @relation(fields: [actaId], references: [id], onDelete: Restrict)
+  firmanteId  String    @map("firmante_id") @db.Uuid
+  firmante    Usuario   @relation(fields: [firmanteId], references: [id], onDelete: Restrict)
+  tokenHash   String    @unique @map("token_hash")
+  vence       DateTime  @db.Timestamptz(6)
+  usado       Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([actaId])
+  @@map("tokens_firma")
+}
+
+model Sesion {
+  id             String     @id @default(uuid()) @db.Uuid
+  usuarioId      String     @map("usuario_id") @db.Uuid
+  usuario        Usuario    @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tokenHash      String     @unique @map("token_hash")
+  metodoAuth     MetodoAuth @map("metodo_auth")
+  empresaCodigo  String?    @map("empresa_codigo")
+  sedeId         String?    @map("sede_id") @db.Uuid
+  sede           Sede?      @relation(fields: [sedeId], references: [id], onDelete: Restrict)
+  expira         DateTime   @db.Timestamptz(6)
+  ip             String?
+  userAgent      String?    @map("user_agent")
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([usuarioId])
+  @@index([expira])
+  @@map("sesiones")
+}
+
+model IntentoAcceso {
+  ip             String    @id
+  intentos       Int       @default(0)
+  primerIntento  DateTime  @map("primer_intento") @db.Timestamptz(6)
+  bloqueadoHasta DateTime? @map("bloqueado_hasta") @db.Timestamptz(6)
+
+  @@map("intentos_acceso")
+}
+
+model Preautenticacion {
+  id                String     @id @default(uuid()) @db.Uuid
+  tokenHash         String     @unique @map("token_hash")
+  metodo            MetodoAuth
+  usuarioEsculapio  String?    @map("usuario_esculapio")
+  servidorEsculapio String?    @map("servidor_esculapio")
+  correoGoogle      String?    @map("correo_google")
+  nombre            String?
+  empresas          Json       @default("[]")
+  state             String?    @unique
+  codeVerifier      String?    @map("code_verifier")
+  expira            DateTime   @db.Timestamptz(6)
+  usado             Boolean    @default(false)
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("preautenticaciones")
+}
+
+model CodigoCelular {
+  id        String   @id @default(uuid()) @db.Uuid
+  usuarioId String   @map("usuario_id") @db.Uuid
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  celular   String
+  hash      String
+  expira    DateTime @db.Timestamptz(6)
+  intentos  Int      @default(0)
+  usado     Boolean  @default(false)
+
+  @@index([usuarioId])
+  @@map("codigos_celular")
+}
+
+model Consecutivo {
+  prefijo String @id
+  valor   Int    @default(0)
+
+  @@map("consecutivos")
+}
+
+model AnsVersion {
+  id                     String       @id @default(uuid()) @db.Uuid
+  prioridadId            String       @map("prioridad_id") @db.Uuid
+  prioridad              Prioridad    @relation(fields: [prioridadId], references: [id], onDelete: Restrict)
+  version                Int
+  primeraRespuestaValor  Int          @map("primera_respuesta_valor")
+  primeraRespuestaUnidad UnidadTiempo @map("primera_respuesta_unidad")
+  solucionValor          Int          @map("solucion_valor")
+  solucionUnidad         UnidadTiempo @map("solucion_unidad")
+  usuarioId              String?      @map("usuario_id") @db.Uuid
+  fecha                  DateTime     @default(now()) @db.Timestamptz(6)
+
+  @@unique([prioridadId, version])
+  @@map("ans_versiones")
+}

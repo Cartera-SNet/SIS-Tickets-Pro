@@ -1,0 +1,22 @@
+{
+  "name": "sis-tickets",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @sis/shared && npm run build -w @sis/api && npm run build -w @sis/web",
+    "lint": "npm run lint -w @sis/shared && npm run lint -w @sis/api && npm run lint -w @sis/web",
+    "test": "npm run build -w @sis/shared && npm run test -w @sis/api && npm run test -w @sis/web",
+    "migrate": "npm run migrate -w @sis/api",
+    "migrate:sql": "npm run migrate:sql -w @sis/api",
+    "seed": "npm run build -w @sis/shared && npm run seed -w @sis/api",
+    "dev:api": "npm run start:dev -w @sis/api",
+    "dev:web": "npm run dev -w @sis/web",
+    "start": "node scripts/start.mjs"
+  }
+}
