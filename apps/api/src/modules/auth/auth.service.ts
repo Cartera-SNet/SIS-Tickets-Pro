@@ -219,14 +219,27 @@ export class AuthService {
     if (this.entorno.authMode !== 'dev') {
       throw new NotFoundException({ code: 'not_found', message: 'No se encontró el recurso.' });
     }
-    return this.enBase(() =>
-      this.prisma.usuario.findMany({
+    return this.enBase(async () => {
+      const filas = await this.prisma.usuario.findMany({
         where: { deletedAt: null, activo: true },
-        select: { id: true, nombre: true, rol: true, correoGoogle: true },
+        select: { id: true, nombre: true, rol: true, correoGoogle: true, usuarioEsculapio: true },
         orderBy: { nombre: 'asc' },
-        take: 20,
-      }),
-    );
+        take: 40,
+      });
+      const correos = new Set(
+        filas.map((fila) => fila.correoGoogle?.toLowerCase()).filter((correo): correo is string => Boolean(correo)),
+      );
+      return filas
+        .filter((fila) => {
+          if (fila.correoGoogle) {
+            return true;
+          }
+          const alias = (fila.usuarioEsculapio ?? fila.nombre).toLowerCase().replace(/^mailto:/, '');
+          return !correos.has(alias);
+        })
+        .slice(0, 20)
+        .map(({ id, nombre, rol }) => ({ id, nombre, rol }));
+    });
   }
 
   async resolver(token: string | null) {
@@ -435,6 +448,21 @@ export class AuthService {
   }
 
   private async buscarOCrearEsculapio(entrada: { usuario: string; servidor: string; nombre: string; sedeId: string | null }) {
+    const correo = entrada.usuario.trim().toLowerCase().replace(/^mailto:/, '');
+    const porCorreo = correo.includes('@')
+      ? await this.prisma.usuario.findFirst({
+          where: {
+            deletedAt: null,
+            OR: [
+              { correoGoogle: { equals: correo, mode: 'insensitive' } },
+              { correoNotificaciones: { equals: correo, mode: 'insensitive' } },
+            ],
+          },
+        })
+      : null;
+    if (porCorreo) {
+      return porCorreo;
+    }
     const existente = await this.prisma.usuario.findFirst({
       where: { usuarioEsculapio: entrada.usuario, servidorEsculapio: entrada.servidor, deletedAt: null },
     });

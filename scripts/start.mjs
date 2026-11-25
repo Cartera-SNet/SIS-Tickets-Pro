@@ -4,12 +4,17 @@
 import { spawnSync } from 'node:child_process';
 import { setTimeout as esperar } from 'node:timers/promises';
 import { PrismaClient } from '@prisma/client';
+import { urlsDeBase } from './preparar-base.mjs';
 
 const faltan = ['DATABASE_URL', 'SECRET_KEY'].filter((nombre) => !process.env[nombre]?.trim());
 if (faltan.length > 0) {
   console.error(`Faltan variables obligatorias: ${faltan.join(', ')}. Defínelas en el servicio y vuelve a desplegar.`);
   process.exit(1);
 }
+
+const urls = urlsDeBase(process.env.DATABASE_URL);
+process.env.DIRECT_URL = urls.directa;
+process.env.DATABASE_URL = urls.directa;
 
 function ejecutar(comando, argumentos) {
   return spawnSync(comando, argumentos, { stdio: 'inherit', env: process.env }).status === 0;

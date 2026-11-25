@@ -8,17 +8,16 @@ El repositorio trae un `Dockerfile` en la raíz. Railway lo detecta solo y lo us
 
 1. **Sube el repositorio a GitHub** (rama `main`).
 2. En Railway: **New Project → Deploy from GitHub repo** y elige el repositorio.
-3. En el mismo proyecto: **+ New → Database → Add PostgreSQL**.
-4. En el servicio de la app, pestaña **Variables**, agrega solo estas dos:
+3. En el servicio de la app, pestaña **Variables**, agrega solo estas dos:
 
    | Variable | Valor |
    |---|---|
-   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (usa el nombre real de tu servicio de base si no es `Postgres`) |
+   | `DATABASE_URL` | La cadena de Neon (con o sin pooler y `channel_binding`). Al arrancar se quita `channel_binding` y, si el host es el pooler, se usa el host directo para que Prisma no falle. También sirve `${{Postgres.DATABASE_URL}}` si la base es la de Railway. |
    | `SECRET_KEY` | un texto largo y aleatorio. Para generarlo: `openssl rand -hex 32` |
 
-5. **Volumen** (para adjuntos de tickets y actas en PDF): en el servicio, **Settings → Volumes → Add Volume**, ruta de montaje `/data`. La app lo detecta sola (`RAILWAY_VOLUME_MOUNT_PATH`). Sin volumen todo funciona, pero los archivos se pierden en cada despliegue.
-6. **Settings → Networking → Generate Domain**. La app toma ese dominio sola para `WEB_ORIGIN` (enlaces de firma y verificación de actas). Si generas el dominio después del primer despliegue, haz **Redeploy** para que la app lo tome.
-7. Opcional: **Settings → Deploy → Healthcheck Path** = `/health`.
+4. **Volumen** (para adjuntos de tickets y actas en PDF): en el servicio, **Settings → Volumes → Add Volume**, ruta de montaje `/data`. La app lo detecta sola (`RAILWAY_VOLUME_MOUNT_PATH`). Sin volumen todo funciona, pero los archivos se pierden en cada despliegue.
+5. **Settings → Networking → Generate Domain**. La app toma ese dominio sola para `WEB_ORIGIN` (enlaces de firma y verificación de actas). Si generas el dominio después del primer despliegue, haz **Redeploy** para que la app lo tome.
+6. Opcional: **Settings → Deploy → Healthcheck Path** = `/health`.
 
 Con eso el despliegue arranca. No hace falta ejecutar nada a mano.
 
