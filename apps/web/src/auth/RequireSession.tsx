@@ -1,10 +1,9 @@
-import { Navigate, Outlet, useNavigate } from 'react-router-dom';
+import { Navigate, Outlet } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { ErrorHttp, type Sesion, api } from '../api/http';
 import { PendientePage } from '../pages/PendientePage';
 
 export function RequireSession() {
-  const navigate = useNavigate();
   const [estado, setEstado] = useState<'carga' | 'ok' | 'no' | 'pendiente' | 'base'>('carga');
   const [sesion, setSesion] = useState<Sesion | null>(null);
 
@@ -14,8 +13,6 @@ export function RequireSession() {
         setSesion(actual);
         if (!actual.puedeEntrar) {
           setEstado('pendiente');
-        } else if (actual.faltaPerfil) {
-          navigate('/acceso');
         } else {
           setEstado('ok');
         }
@@ -23,7 +20,7 @@ export function RequireSession() {
       .catch((error: unknown) => {
         setEstado(error instanceof ErrorHttp && error.status === 503 ? 'base' : 'no');
       });
-  }, [navigate]);
+  }, []);
 
   if (estado === 'carga') {
     return <p className="login-panel">Comprobando la sesión…</p>;

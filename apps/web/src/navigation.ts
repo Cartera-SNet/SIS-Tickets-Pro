@@ -20,3 +20,31 @@ export const NAV: ItemNav[] = [
 export function itemPorRuta(ruta: string): ItemNav | undefined {
   return NAV.find((item) => item.ruta === ruta);
 }
+
+const PERMISOS_DE_RUTA: Record<string, readonly string[] | null> = {
+  '/': null,
+  '/tickets': ['tickets.ver_propios', 'tickets.ver_sede'],
+  '/tickets/nuevo': ['tickets.crear'],
+  '/agente': ['tickets.ver_sede'],
+  '/preventivo': ['preventivo.ejecutar', 'reportes.ver'],
+  '/actas': ['tickets.ver_sede', 'reportes.ver'],
+  '/notificaciones': null,
+  '/conocimiento': ['kb.aprobar', 'tickets.ver_sede'],
+  '/reportes': ['reportes.ver'],
+  '/configuracion': ['configuracion.editar', 'catalogos.editar', 'usuarios.administrar'],
+};
+
+export function rutaPermitida(ruta: string, permisos: readonly string[]): boolean {
+  const clave = Object.keys(PERMISOS_DE_RUTA)
+    .sort((a, b) => b.length - a.length)
+    .find((item) => ruta === item || (item !== '/' && ruta.startsWith(`${item}/`)));
+  const requeridos = clave ? PERMISOS_DE_RUTA[clave] : null;
+  if (!requeridos) {
+    return true;
+  }
+  return requeridos.some((permiso) => permisos.includes(permiso));
+}
+
+export function menuVisible(permisos: readonly string[]): ItemNav[] {
+  return NAV.filter((item) => rutaPermitida(item.ruta, permisos));
+}

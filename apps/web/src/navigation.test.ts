@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { NAV } from './navigation';
+import { menuVisible, NAV } from './navigation';
 
 describe('navegación y tema', () => {
   it('expone el menú de la mesa en español', () => {
@@ -15,6 +15,16 @@ describe('navegación y tema', () => {
       'Base de conocimiento',
       'Reportes',
       'Configuración',
+    ]);
+  });
+
+  it('al solicitante solo le deja solicitar y seguir sus casos', () => {
+    const permisos = ['tickets.crear', 'tickets.ver_propios', 'tickets.calificar', 'actas.firmar'];
+    expect(menuVisible(permisos).map((item) => item.etiqueta)).toEqual([
+      'Inicio',
+      'Tickets',
+      'Nuevo ticket',
+      'Notificaciones',
     ]);
   });
 

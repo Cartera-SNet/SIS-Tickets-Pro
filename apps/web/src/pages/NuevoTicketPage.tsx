@@ -1,20 +1,20 @@
 import { Button, Form, Input, InputNumber, Select, Switch } from 'antd';
 import { useEffect, useState } from 'react';
 import { ErrorHttp, api } from '../api/http';
+import { useNavigate } from 'react-router-dom';
 
 type Categoria = { id: string; nombre: string; subcategorias: { id: string; nombre: string }[] };
 type Sede = { id: string; nombre: string; ubicaciones: { id: string; nombre: string; piso: string | null }[] };
 type Equipo = { id: string; placa: string | null; tipo: string };
 
 export function NuevoTicketPage() {
+  const navigate = useNavigate();
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [equipos, setEquipos] = useState<Equipo[]>([]);
   const [categoriaId, setCategoriaId] = useState<string>();
-  const [sedeId, setSedeId] = useState<string>();
   const [aviso, setAviso] = useState('');
   const [sugerencias, setSugerencias] = useState<{ id: string; codigo: string; titulo: string; pasos: string }[]>([]);
-  const [numero, setNumero] = useState('');
 
   useEffect(() => {
     Promise.all([
@@ -42,7 +42,12 @@ export function NuevoTicketPage() {
       .catch(() => setSugerencias([]));
   }, [categoriaId]);
   const subcategorias = categorias.find((item) => item.id === categoriaId)?.subcategorias ?? [];
-  const ubicaciones = sedes.find((item) => item.id === sedeId)?.ubicaciones ?? [];
+  const ubicaciones = sedes.flatMap((sede) =>
+    sede.ubicaciones.map((ubicacion) => ({
+      id: ubicacion.id,
+      etiqueta: ubicacion.piso ? `${sede.nombre} · ${ubicacion.nombre} · piso ${ubicacion.piso}` : `${sede.nombre} · ${ubicacion.nombre}`,
+    })),
+  );
 
   async function enviar(valores: {
     categoriaId: string;
@@ -56,12 +61,17 @@ export function NuevoTicketPage() {
     areaCompleta: boolean;
   }) {
     try {
-      const creado = await api<{ numero: string; prioridad: string }>('/api/tickets', {
+      const creado = await api<{ id: string; numero: string; prioridad: string }>('/api/tickets', {
         method: 'POST',
-        body: { ...valores, puedeTrabajar: valores.puedeTrabajar ?? true, areaCompleta: valores.areaCompleta ?? false },
+        body: {
+          ...valores,
+          subcategoriaId: valores.subcategoriaId || undefined,
+          equipoId: valores.equipoId || undefined,
+          puedeTrabajar: valores.puedeTrabajar ?? true,
+          areaCompleta: valores.areaCompleta ?? false,
+        },
       });
-      setNumero(`${creado.numero} · prioridad ${creado.prioridad}`);
-      setAviso('');
+      navigate(`/tickets/${creado.id}`);
     } catch (error) {
       setAviso(error instanceof ErrorHttp ? error.message : 'No se pudo crear el caso.');
     }
@@ -72,7 +82,6 @@ export function NuevoTicketPage() {
       <h1>Nuevo ticket</h1>
       <p>Cuéntanos qué pasa con el equipo, la red o un programa. No hace falta un artículo de ayuda para enviarlo.</p>
       {aviso && <p className="aviso-db">{aviso}</p>}
-      {numero && <p>Caso creado: {numero}</p>}
       {sugerencias.length > 0 && (
         <aside>
           <h2>Antes de enviar, mira esto</h2>
@@ -112,20 +121,11 @@ export function NuevoTicketPage() {
             ))}
           </Select>
         </Form.Item>
-        <Form.Item label="Sede">
-          <Select
-            id="sede"
-            onChange={setSedeId}
-            value={sedeId}
-            options={sedes.map((item) => ({ value: item.id, label: item.nombre }))}
-            optionRender={(opcion) => opcion.label}
-          />
-        </Form.Item>
         <Form.Item name="ubicacionId" label="Dónde está" rules={[{ required: true, message: 'Elige la ubicación' }]}>
           <Select>
             {ubicaciones.map((item) => (
               <Select.Option key={item.id} value={item.id}>
-                {item.piso ? `${item.nombre} · piso ${item.piso}` : item.nombre}
+                {item.etiqueta}
               </Select.Option>
             ))}
           </Select>

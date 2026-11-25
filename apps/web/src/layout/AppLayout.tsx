@@ -14,7 +14,7 @@ import { Avatar, Badge, Button, Layout, Menu } from 'antd';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import { api, obtenerJson, type Sesion } from '../api/http';
-import { NAV } from '../navigation';
+import { menuVisible, rutaPermitida } from '../navigation';
 
 const { Header, Sider, Content } = Layout;
 
@@ -91,7 +91,7 @@ export function AppLayout() {
           mode="inline"
           theme="dark"
           selectedKeys={[location.pathname]}
-          items={NAV.map((item) => ({
+          items={menuVisible(sesion?.permisos ?? []).map((item) => ({
             key: item.ruta,
             icon: ICONOS[item.ruta],
             label: item.etiqueta,
@@ -127,7 +127,20 @@ export function AppLayout() {
           </Button>
         </Header>
         <Content id="contenido" className="contenido-app">
-          <Outlet />
+          {sesion?.faltaPerfil && (
+            <p className="aviso-db">
+              Falta tu ubicación habitual.{' '}
+              <Button type="link" onClick={() => navigate('/acceso')}>
+                Completarla
+              </Button>
+              . Tus casos ya se pueden ver.
+            </p>
+          )}
+          {sesion && !rutaPermitida(location.pathname, sesion.permisos) ? (
+            <p>Esta pantalla no está en tu rol. Tus solicitudes están en Tickets.</p>
+          ) : (
+            <Outlet />
+          )}
         </Content>
       </Layout>
     </Layout>
