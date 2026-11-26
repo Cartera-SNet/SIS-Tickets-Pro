@@ -129,9 +129,7 @@ export function AgentePage() {
             <>
               <div className="telefono" aria-label="Chat del solicitante">
                 <div className="telefono-cabeza">
-                  <div className="telefono-marca" aria-hidden="true">
-                    S
-                  </div>
+                  <img className="telefono-marca" src="/sis-logo.jpg" alt="" aria-hidden="true" />
                   <div>
                     <strong>Mesa de Ayuda TI</strong>
                     <small>Asistente virtual · cuenta empresarial</small>

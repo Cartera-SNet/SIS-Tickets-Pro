@@ -16,6 +16,7 @@ import { Avatar, Badge, Button, Input, Layout, Menu } from 'antd';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import { api, obtenerJson, type Sesion } from '../api/http';
+import { MarcaSis } from '../components/MarcaSis';
 import { menuVisible, rutaPermitida } from '../navigation';
 
 const { Header, Sider, Content } = Layout;
@@ -93,16 +94,7 @@ export function AppLayout() {
       </a>
       <Sider className="sider-app" breakpoint="lg" collapsedWidth={0} width={248}>
         <div className="sider-cuerpo">
-          <div className="marca">
-            <div className="marca-s" aria-hidden="true">
-              S
-            </div>
-            <div>
-              <strong>SIS</strong>
-              <small>MESA DE AYUDA TI</small>
-              <em className="marca-lema">Soporte de hardware, redes y apps básicas</em>
-            </div>
-          </div>
+          <MarcaSis lema="Soporte de hardware, redes y apps básicas" />
           <Menu
             mode="inline"
             theme="dark"

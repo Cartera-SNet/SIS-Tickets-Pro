@@ -7,6 +7,8 @@
   --primary: #14a3a3;
   --primary-bright: #2ec4c4;
   --brand-green: #19a082;
+  --brand-lime: #84bd00;
+  --brand-teal-logo: #00968f;
   --success: #3ccf8e;
   --success-btn: #1e9e6a;
   --warning: #e0a100;
@@ -63,34 +65,40 @@ button:focus-visible,
 
 .marca {
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  padding: 18px 16px 14px;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+  padding: 16px 14px 12px;
 }
 
-.marca-s {
-  width: 42px;
-  height: 42px;
+.marca-logo {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  height: auto;
   border-radius: 12px;
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  color: #04221f;
-  background: linear-gradient(135deg, var(--primary-bright), var(--brand-green));
-  flex: 0 0 auto;
-  box-shadow: 0 8px 20px rgb(20 163 163 / 25%);
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgb(0 0 0 / 28%);
 }
 
-.marca strong {
-  display: block;
-  font-size: 1.08rem;
+.marca-logo-icono {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  object-position: left center;
+  border-radius: 50%;
+  background: #ffffff;
 }
 
-.marca small {
+.marca-producto {
+  padding: 0 2px;
+}
+
+.marca-producto strong {
   display: block;
-  color: var(--text-muted);
-  letter-spacing: 0.06em;
-  font-size: 0.68rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  color: var(--brand-lime);
 }
 
 .marca-lema {
@@ -100,7 +108,36 @@ button:focus-visible,
   font-size: 0.72rem;
   line-height: 1.35;
   color: var(--text-muted);
-  max-width: 150px;
+}
+
+.marca-completa {
+  padding: 0;
+  gap: 14px;
+  max-width: 360px;
+}
+
+.marca-completa .marca-logo {
+  max-width: 320px;
+}
+
+.marca-completa .marca-producto strong {
+  font-size: 0.9rem;
+  color: var(--primary-bright);
+}
+
+.marca-login,
+.marca-acceso {
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+.marca-acceso {
+  margin-bottom: 16px;
+}
+
+.marca-acceso .marca-logo,
+.marca-login .marca-logo {
+  background: #ffffff;
 }
 
 .sider-cuerpo {
@@ -1098,12 +1135,11 @@ button:focus-visible,
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  background: #04221f;
-  color: #8ef0d4;
+  object-fit: cover;
+  object-position: left center;
+  background: #ffffff;
   flex: 0 0 auto;
+  border: 1px solid rgb(255 255 255 / 35%);
 }
 
 .telefono-cabeza small {

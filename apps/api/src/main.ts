@@ -55,11 +55,15 @@ async function bootstrap(): Promise<void> {
   if (existsSync(indiceWeb)) {
     app.useStaticAssets(carpetaWeb, {
       index: false,
-      maxAge: '1y',
-      immutable: true,
       setHeaders: (respuesta, ruta) => {
         if (ruta.endsWith('index.html')) {
           respuesta.setHeader('Cache-Control', 'no-cache');
+        } else if (/[\\/]assets[\\/]/.test(ruta)) {
+          // Archivos con hash en el nombre: nunca cambian, se pueden guardar un año.
+          respuesta.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else {
+          // Logo, íconos y demás archivos públicos con nombre fijo: revalidar cada hora.
+          respuesta.setHeader('Cache-Control', 'public, max-age=3600');
         }
       },
     });

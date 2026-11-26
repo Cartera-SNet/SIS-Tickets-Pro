@@ -2,6 +2,7 @@ import { Button, Form, Input, Select } from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ErrorHttp, api, prepararCsrf } from '../api/http';
+import { MarcaSis } from '../components/MarcaSis';
 
 type Servidor = { descripcion: string };
 type Empresa = { cod: string; nombre: string; sede: string };
@@ -83,15 +84,7 @@ export function LoginPage() {
   return (
     <main className="login-hero">
       <section className="login-copy">
-        <div className="marca" style={{ padding: 0 }}>
-          <div className="marca-s" aria-hidden="true">
-            S
-          </div>
-          <div>
-            <strong>SIS</strong>
-            <small>MESA DE AYUDA TI</small>
-          </div>
-        </div>
+        <MarcaSis variante="completa" className="marca-login" />
         <h1>Soporte de hardware, redes y aplicaciones básicas</h1>
         <p>
           Reporta fallas de tu equipo, impresora, conexión o programas de oficina. También puedes escribirnos por

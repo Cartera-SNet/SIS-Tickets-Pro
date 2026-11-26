@@ -2,6 +2,7 @@ import { Button, Checkbox, Form, Input, Select } from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ErrorHttp, type Sesion, api, prepararCsrf } from '../api/http';
+import { MarcaSis } from '../components/MarcaSis';
 
 type Catalogo = {
   sedes: { id: string; nombre: string }[];
@@ -79,15 +80,7 @@ export function AccesoPage() {
   return (
     <main className="acceso-shell">
       <section className="acceso-card">
-        <div className="marca" style={{ padding: 0, marginBottom: 16 }}>
-          <div className="marca-s" aria-hidden="true">
-            S
-          </div>
-          <div>
-            <strong>SIS</strong>
-            <small>MESA DE AYUDA TI</small>
-          </div>
-        </div>
+        <MarcaSis className="marca-acceso" />
         <h1>Empresa, sede y contacto</h1>
         <p>Confirma dónde trabajas y cómo te avisamos. Los datos de Esculapio o del catálogo local alimentan la sesión.</p>
         {aviso && <p className="aviso-db">{aviso}</p>}
