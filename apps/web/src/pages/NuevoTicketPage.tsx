@@ -1,17 +1,13 @@
 import { Button, Checkbox, Form, Input, Modal, Select } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { subirEvidenciaBase64 } from '../api/evidencias';
 import { ErrorHttp, api } from '../api/http';
 
 type Subcategoria = { id: string; nombre: string };
 type Categoria = { id: string; nombre: string; subcategorias: Subcategoria[] };
 type Sede = { id: string; nombre: string; ubicaciones: { id: string; nombre: string; piso: string | null }[] };
 type Equipo = { id: string; placa: string | null; tipo: string };
-
-function tokenCsrf() {
-  const coincidencia = document.cookie.match(/(?:^|; )sis_csrf=([^;]*)/);
-  return coincidencia ? decodeURIComponent(coincidencia[1]) : null;
-}
 
 export function NuevoTicketPage() {
   const navigate = useNavigate();
@@ -130,21 +126,14 @@ export function NuevoTicketPage() {
           equipoId: valores.equipoId || undefined,
         },
       });
-      const csrf = tokenCsrf();
       for (const archivo of evidencias) {
-        const datos = new FormData();
-        datos.append('archivo', archivo);
-        const respuesta = await fetch(`/api/tickets/${creado.id}/adjuntos`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: csrf ? { 'x-csrf-token': csrf } : {},
-          body: datos,
-        });
-        if (!respuesta.ok) {
-          const cuerpo = (await respuesta.json()) as { error?: { message?: string } };
+        try {
+          await subirEvidenciaBase64(creado.id, archivo);
+        } catch (error) {
           setAviso(
-            cuerpo.error?.message ??
-              `El caso ${creado.numero} se creó, pero no se pudo subir ${archivo.name}. Súbelo en Evidencias.`,
+            error instanceof ErrorHttp
+              ? `${error.message} El caso ${creado.numero} quedó creado; completa las evidencias en el detalle.`
+              : `El caso ${creado.numero} se creó, pero no se pudo subir ${archivo.name}. Súbelo en Evidencias.`,
           );
           navigate(`/tickets/${creado.id}`);
           return;

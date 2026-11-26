@@ -1,7 +1,7 @@
 import { ESTADO_TICKET } from '@sis/shared';
 import { createHash } from 'node:crypto';
-import { createReadStream, existsSync } from 'node:fs';
-import { unlink } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { readFile, unlink } from 'node:fs/promises';
 import { basename, extname, isAbsolute, resolve, sep } from 'node:path';
 import { HttpException, HttpStatus, Injectable, StreamableFile } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
@@ -396,7 +396,67 @@ export class TicketsService {
     return payload;
   }
 
-  async adjuntar(
+  private validarPermisoAdjunto(
+    ticket: { solicitante: { id: string } },
+    actor: Principal,
+    mensajeRespuesta: string,
+  ) {
+    const esSolicitante = ticket.solicitante.id === actor.id;
+    const esEquipo = actor.rol === 'TECNICO' || actor.rol === 'ADMINISTRADOR';
+    if (esSolicitante) {
+      if (mensajeRespuesta) {
+        throw new HttpException(
+          { code: 'validation_error', message: 'El solicitante adjunta evidencias desde la pestaña Evidencias, sin respuesta.' },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      return { esSolicitante, esEquipo };
+    }
+    if (esEquipo) {
+      if (mensajeRespuesta.length < 1) {
+        throw new HttpException(
+          {
+            code: 'forbidden',
+            message: 'El equipo solo puede adjuntar evidencias al responder al solicitante en la conversación.',
+          },
+          HttpStatus.FORBIDDEN,
+        );
+      }
+      return { esSolicitante, esEquipo };
+    }
+    throw new HttpException(
+      { code: 'forbidden', message: 'No puedes adjuntar evidencias en este caso.' },
+      HttpStatus.FORBIDDEN,
+    );
+  }
+
+  private bytesDesdeBase64(base64Crudo: string) {
+    const limpio = base64Crudo.replace(/^data:[^;]+;base64,/i, '').replace(/\s/g, '');
+    if (!limpio) {
+      throw new HttpException(
+        { code: 'validation_error', message: 'El base64 de la evidencia está vacío.' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(limpio, 'base64');
+    } catch {
+      throw new HttpException(
+        { code: 'validation_error', message: 'El base64 de la evidencia no es válido.' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (!buffer.length) {
+      throw new HttpException(
+        { code: 'validation_error', message: 'No se pudo decodificar el base64 de la evidencia.' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    return buffer;
+  }
+
+  private async guardarAdjuntoNeon(
     actor: Principal,
     ticketId: string,
     archivo: { originalname: string; buffer: Buffer; mimetype: string; size: number },
@@ -417,40 +477,15 @@ export class TicketsService {
       );
     }
 
-    const esSolicitante = ticket.solicitante.id === actor.id;
-    const esEquipo = actor.rol === 'TECNICO' || actor.rol === 'ADMINISTRADOR';
     const respuesta = opciones.mensajeRespuesta?.trim() ?? '';
-
-    // Doc §6.1: evidencias del solicitante/técnico. El técnico solo adjunta al responder al solicitante.
-    if (esSolicitante) {
-      if (respuesta) {
-        throw new HttpException(
-          { code: 'validation_error', message: 'El solicitante adjunta evidencias desde la pestaña Evidencias, sin respuesta.' },
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-    } else if (esEquipo) {
-      if (respuesta.length < 1) {
-        throw new HttpException(
-          {
-            code: 'forbidden',
-            message: 'El equipo solo puede adjuntar evidencias al responder al solicitante en la conversación.',
-          },
-          HttpStatus.FORBIDDEN,
-        );
-      }
-    } else {
-      throw new HttpException(
-        { code: 'forbidden', message: 'No puedes adjuntar evidencias en este caso.' },
-        HttpStatus.FORBIDDEN,
-      );
-    }
+    const { esEquipo } = this.validarPermisoAdjunto(ticket, actor, respuesta);
 
     const hash = createHash('sha256').update(archivo.buffer).digest('hex');
-    // Copia explícita a ArrayBuffer: evita el choque de tipos SharedArrayBuffer vs ArrayBuffer con Prisma Bytes.
+    // Copia a ArrayBuffer propio para Prisma Bytes (evita SharedArrayBuffer en tsc).
     const copiaContenido = new ArrayBuffer(archivo.buffer.length);
     const contenidoBytes = new Uint8Array(copiaContenido);
     contenidoBytes.set(archivo.buffer);
+
     const adjunto = await this.prisma.adjunto.create({
       data: {
         ticketId,
@@ -513,41 +548,85 @@ export class TicketsService {
     return mensajePayload ? { ...adjunto, mensaje: mensajePayload } : adjunto;
   }
 
-  async descargar(actor: Principal, ticketId: string, adjuntoId: string, inline = false) {
-    await this.detalle(actor, ticketId);
+  async adjuntar(
+    actor: Principal,
+    ticketId: string,
+    archivo: { originalname: string; buffer: Buffer; mimetype: string; size: number },
+    opciones: { mensajeRespuesta?: string } = {},
+  ) {
+    return this.guardarAdjuntoNeon(actor, ticketId, archivo, opciones);
+  }
+
+  /** Recibe evidencia en base64 (petición JSON) y la guarda como BYTEA en Neon. */
+  async adjuntarBase64(
+    actor: Principal,
+    ticketId: string,
+    entrada: { nombre: string; mime: string; base64: string },
+    opciones: { mensajeRespuesta?: string } = {},
+  ) {
+    const buffer = this.bytesDesdeBase64(entrada.base64);
+    return this.guardarAdjuntoNeon(
+      actor,
+      ticketId,
+      {
+        originalname: entrada.nombre || 'evidencia.bin',
+        buffer,
+        mimetype: entrada.mime || 'application/octet-stream',
+        size: buffer.length,
+      },
+      opciones,
+    );
+  }
+
+  private async leerContenidoAdjunto(ticketId: string, adjuntoId: string) {
     const adjunto = await this.prisma.adjunto.findFirst({
       where: { id: adjuntoId, ticketId },
-      select: { id: true, nombre: true, mime: true, ruta: true, contenido: true },
+      select: { id: true, nombre: true, mime: true, tamano: true, ruta: true, contenido: true },
     });
     if (!adjunto) {
       throw new HttpException({ code: 'not_found', message: 'No se encontró el archivo.' }, HttpStatus.NOT_FOUND);
     }
-    const modo = inline ? 'inline' : 'attachment';
-    const cabeceras = {
-      type: adjunto.mime,
-      disposition: `${modo}; filename="${adjunto.nombre}"`,
-    };
-
     if (adjunto.contenido && adjunto.contenido.length > 0) {
-      // Copia explícita: evita el choque TS SharedArrayBuffer vs ArrayBuffer de Buffer.from(Uint8Array).
       const bytes = Buffer.alloc(adjunto.contenido.length);
       bytes.set(adjunto.contenido);
-      return new StreamableFile(bytes, cabeceras);
+      return { adjunto, bytes };
     }
-
     const absoluto = resolverArchivoDisco(adjunto.ruta, ticketId);
     if (absoluto) {
-      return new StreamableFile(createReadStream(absoluto), cabeceras);
+      const bytes = await readFile(absoluto);
+      return { adjunto, bytes };
     }
-
     throw new HttpException(
       {
         code: 'not_found',
         message:
-          'Esta evidencia es anterior al almacenamiento en Neon y el archivo ya no está en el servidor. Pide al solicitante que la vuelva a subir.',
+          'Esta evidencia no tiene contenido en Neon. Vuelve a subirla; el visor usa base64 consultado desde la base.',
       },
       HttpStatus.NOT_FOUND,
     );
+  }
+
+  /** Devuelve la evidencia desde Neon convertida a base64 para el cliente. */
+  async descargarBase64(actor: Principal, ticketId: string, adjuntoId: string) {
+    await this.detalle(actor, ticketId);
+    const { adjunto, bytes } = await this.leerContenidoAdjunto(ticketId, adjuntoId);
+    return {
+      id: adjunto.id,
+      nombre: adjunto.nombre,
+      mime: adjunto.mime || 'application/octet-stream',
+      tamano: adjunto.tamano,
+      base64: bytes.toString('base64'),
+    };
+  }
+
+  async descargar(actor: Principal, ticketId: string, adjuntoId: string, inline = false) {
+    await this.detalle(actor, ticketId);
+    const { adjunto, bytes } = await this.leerContenidoAdjunto(ticketId, adjuntoId);
+    const modo = inline ? 'inline' : 'attachment';
+    return new StreamableFile(bytes, {
+      type: adjunto.mime,
+      disposition: `${modo}; filename="${adjunto.nombre}"`,
+    });
   }
 
   async quitarAdjunto(actor: Principal, ticketId: string, adjuntoId: string) {

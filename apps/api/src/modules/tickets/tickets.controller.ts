@@ -149,13 +149,45 @@ export class TicketsController {
 
   @Post(':id/adjuntos')
   @CualquierPermiso('tickets.ver_propios', 'tickets.ver_sede')
+  adjuntarJson(
+    @Req() peticion: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body()
+    cuerpo: {
+      mensaje?: string;
+      nombre?: string;
+      mime?: string;
+      base64?: string;
+    },
+  ) {
+    // Canal principal: JSON + base64 (Railway decodifica y guarda BYTEA en Neon).
+    if (typeof cuerpo?.base64 === 'string' && cuerpo.base64.trim()) {
+      return this.tickets.adjuntarBase64(
+        principalDe(peticion),
+        id,
+        {
+          nombre: typeof cuerpo.nombre === 'string' ? cuerpo.nombre : 'evidencia.bin',
+          mime: typeof cuerpo.mime === 'string' ? cuerpo.mime : 'application/octet-stream',
+          base64: cuerpo.base64,
+        },
+        { mensajeRespuesta: typeof cuerpo.mensaje === 'string' ? cuerpo.mensaje : undefined },
+      );
+    }
+    throw new HttpException(
+      { code: 'validation_error', message: 'Envía la evidencia en JSON con nombre, mime y base64.' },
+      HttpStatus.BAD_REQUEST,
+    );
+  }
+
+  @Post(':id/adjuntos/multipart')
+  @CualquierPermiso('tickets.ver_propios', 'tickets.ver_sede')
   @UseInterceptors(
     FileInterceptor('archivo', {
       storage: memoryStorage(),
       limits: { fileSize: 5 * 1024 * 1024 },
     }),
   )
-  adjuntar(
+  adjuntarMultipart(
     @Req() peticion: Request,
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFile() archivo: { originalname: string; buffer: Buffer; mimetype: string; size: number },
@@ -179,7 +211,11 @@ export class TicketsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('adjuntoId', ParseUUIDPipe) adjuntoId: string,
     @Query('ver') ver?: string,
+    @Query('formato') formato?: string,
   ) {
+    if (formato === 'base64') {
+      return this.tickets.descargarBase64(principalDe(peticion), id, adjuntoId);
+    }
     return this.tickets.descargar(principalDe(peticion), id, adjuntoId, ver === '1' || ver === 'true');
   }
 
