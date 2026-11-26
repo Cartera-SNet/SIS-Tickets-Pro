@@ -8,12 +8,14 @@ alwaysApply: true
 Este es el repositorio de trabajo activo:
 `G:\Otros ordenadores\Mi PC\Victor Yepes - Proyectos\PROYECTOS - SIS\SIS-Tickets`
 
-Cada requerimiento se sube a **ambos** remotos, rama `main`. No esperes un mensaje aparte de commit o push.
+Cada requerimiento se sube a **ambos** remotos. No esperes un mensaje aparte de commit o push.
 
-| Remoto | URL |
+| Remoto | Destino |
 |---|---|
-| `origin` | `https://github.com/Cartera-SNet/SIS-Tickets-Pro.git` |
-| `ogaza` | `https://github.com/Ogaza-Jussef/SIS-Tickets.git` |
+| `origin` | `https://github.com/Cartera-SNet/SIS-Tickets-Pro.git` → rama `main` |
+| `ogaza` | `https://github.com/Ogaza-Jussef/SIS-Tickets.git` → rama `backup/pro` |
+
+`ogaza/main` tiene otra historia; el respaldo de este proyecto vive en `backup/pro` para no reescribir esa rama.
 
 ## Antes de modificar
 
@@ -26,8 +28,9 @@ Cada requerimiento se sube a **ambos** remotos, rama `main`. No esperes un mensa
 
 1. Revisa que no haya secretos (`.env`, contraseñas, cadenas de conexión, credenciales).
 2. Haz commit del trabajo pedido.
-3. Haz `git push origin main` y `git push ogaza main`.
-4. Si uno de los dos push falla por permisos, dilo y no lo presentes como subido en ese remoto.
+3. Haz `git push origin main`.
+4. Haz `git push ogaza main:backup/pro`.
+5. Si uno de los dos push falla por permisos, dilo y no lo presentes como subido en ese remoto.
 
 ## Límites
 
