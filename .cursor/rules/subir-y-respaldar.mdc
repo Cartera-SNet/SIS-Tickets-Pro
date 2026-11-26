@@ -1,5 +1,5 @@
 ---
-description: Antes de cada pedido, guarda una copia de la versión anterior y, al terminar, sube el cambio a GitHub.
+description: Antes de cada pedido, guarda una copia de la versión anterior y, al terminar, sube el cambio a ambos remotos de GitHub.
 alwaysApply: true
 ---
 
@@ -8,7 +8,12 @@ alwaysApply: true
 Este es el repositorio de trabajo activo:
 `G:\Otros ordenadores\Mi PC\Victor Yepes - Proyectos\PROYECTOS - SIS\SIS-Tickets`
 
-Cada requerimiento se sube a `origin` (`https://github.com/Cartera-SNet/SIS-Tickets.git`), rama `main`. No esperes un mensaje aparte de commit o push.
+Cada requerimiento se sube a **ambos** remotos, rama `main`. No esperes un mensaje aparte de commit o push.
+
+| Remoto | URL |
+|---|---|
+| `origin` | `https://github.com/Cartera-SNet/SIS-Tickets-Pro.git` |
+| `ogaza` | `https://github.com/Ogaza-Jussef/SIS-Tickets.git` |
 
 ## Antes de modificar
 
@@ -21,11 +26,12 @@ Cada requerimiento se sube a `origin` (`https://github.com/Cartera-SNet/SIS-Tick
 
 1. Revisa que no haya secretos (`.env`, contraseñas, cadenas de conexión, credenciales).
 2. Haz commit del trabajo pedido.
-3. Haz `git push` a `main`.
+3. Haz `git push origin main` y `git push ogaza main`.
+4. Si uno de los dos push falla por permisos, dilo y no lo presentes como subido en ese remoto.
 
 ## Límites
 
-- No cambies la configuración de git.
+- No cambies la configuración de git salvo que el usuario lo pida.
 - No uses `--force`, `--no-verify` ni reescribas la historia.
 - Si el push falla por permisos, dilo y no lo presentes como subido.
 
