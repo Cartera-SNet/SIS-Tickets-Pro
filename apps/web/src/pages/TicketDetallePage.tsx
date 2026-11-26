@@ -74,7 +74,7 @@ export function TicketDetallePage() {
   const socketRef = useRef<ReturnType<typeof conectarTiempoReal> | null>(null);
   const hiloRef = useRef<HTMLDivElement | null>(null);
   const [escribiendo, setEscribiendo] = useState(false);
-  const [pestana, setPestana] = useState<'info' | 'hilo' | 'evidencias' | 'historial'>('info');
+  const [pestana, setPestana] = useState<'info' | 'hilo' | 'evidencias' | 'seguimiento'>('info');
   const [linea, setLinea] = useState<{ fecha: string; tipo: string; quien: string; detalle: unknown }[]>([]);
   const [visor, setVisor] = useState<Adjunto | null>(null);
   const [urlVisor, setUrlVisor] = useState('');
@@ -159,7 +159,7 @@ export function TicketDetallePage() {
   }, [id]);
 
   useEffect(() => {
-    if (pestana !== 'historial') {
+    if (pestana !== 'seguimiento' && pestana !== 'info') {
       return;
     }
     api<{ linea: { fecha: string; tipo: string; quien: string; detalle: unknown }[] }>(`/api/auditoria/tickets/${id}`)
@@ -416,10 +416,9 @@ export function TicketDetallePage() {
 
   const ticketId = ticket.id;
   const esMio = sesion?.id === ticket.solicitante.id;
-  const esTecnico =
-    sesion?.rol === 'TECNICO' ||
-    sesion?.rol === 'ADMINISTRADOR' ||
-    Boolean(sesion?.permisos?.includes('tickets.ver_sede'));
+  const esEquipo = sesion?.rol === 'TECNICO' || sesion?.rol === 'ADMINISTRADOR';
+  const esTecnico = esEquipo || Boolean(sesion?.permisos?.includes('tickets.ver_sede'));
+  const puedeAdjuntarRespuesta = esEquipo || Boolean(sesion?.permisos?.includes('tickets.resolver'));
   const prioridadAlta =
     (ticket.prioridad?.nombre ?? '').toLowerCase().includes('alta') ||
     (ticket.prioridad?.nombre ?? '').toLowerCase().includes('crítica') ||
@@ -429,15 +428,29 @@ export function TicketDetallePage() {
     return `/api/tickets/${ticketId}/adjuntos/${adjuntoId}${ver ? '?ver=1' : ''}`;
   }
 
+  function etiquetaAutor(mensaje: Mensaje) {
+    if (mensaje.autorTipo === 'AGENTE_IA') {
+      return <span className="chip chip-ia">Agente IA</span>;
+    }
+    if (mensaje.autorTipo === 'TECNICO' || mensaje.autorTipo === 'SISTEMA') {
+      return (
+        <>
+          <span className="chip chip-info">Soporte</span> {mensaje.autor}
+        </>
+      );
+    }
+    return mensaje.autor;
+  }
+
   function burbuja(mensaje: Mensaje) {
-    const propio =
+    const delSoporte =
       mensaje.autorTipo === 'TECNICO' || mensaje.autorTipo === 'AGENTE_IA' || mensaje.autorTipo === 'SISTEMA';
     const adjunto = mensaje.adjunto;
     return (
-      <div className={`hilo-msg ${propio ? 'salida' : 'entrada'}`} key={mensaje.id}>
+      <div className={`hilo-msg ${delSoporte ? 'salida' : 'entrada'}`} key={mensaje.id}>
         <header>
           <strong>
-            {mensaje.autorTipo === 'AGENTE_IA' ? <span className="chip chip-ia">Agente IA</span> : mensaje.autor}
+            {etiquetaAutor(mensaje)}
             {mensaje.canal === 'WHATSAPP' ? ' · WhatsApp' : ''}
           </strong>
           <time>
@@ -456,7 +469,7 @@ export function TicketDetallePage() {
 
   function composer() {
     return (
-      <div className={`hilo-composer ${esTecnico && !esMio ? 'con-adjunto' : ''}`}>
+      <div className={`hilo-composer ${puedeAdjuntarRespuesta ? 'hilo-composer-equipo' : ''}`}>
         <Input.TextArea
           value={texto}
           onChange={(evento) => {
@@ -471,34 +484,82 @@ export function TicketDetallePage() {
           }}
           rows={2}
           placeholder={
-            esTecnico && !esMio
-              ? 'Responde al solicitante… (puedes adjuntar evidencia con la respuesta)'
-              : 'Escribe un mensaje (también llega al WhatsApp del solicitante)…'
+            puedeAdjuntarRespuesta
+              ? 'Escribe la respuesta al solicitante…'
+              : 'Escribe un mensaje o pregunta a soporte…'
           }
         />
-        {esTecnico && !esMio && (
-          <label className="boton-archivo boton-archivo-compacto">
-            {archivoRespuesta ? archivoRespuesta.name : 'Adjuntar'}
-            <input
-              type="file"
-              aria-label="Evidencia de la respuesta"
-              accept=".png,.jpg,.jpeg,.pdf,.txt,.webp"
-              onChange={(evento) => {
-                setArchivoRespuesta(evento.target.files?.[0] ?? null);
-                evento.target.value = '';
-              }}
-            />
-          </label>
-        )}
-        <Button type="primary" onClick={() => void enviarMensaje()} disabled={!texto.trim()}>
-          Enviar
-        </Button>
+        <div className="hilo-composer-barra">
+          {puedeAdjuntarRespuesta ? (
+            <label className="boton-archivo">
+              {archivoRespuesta ? `Archivo: ${archivoRespuesta.name}` : 'Adjuntar evidencia'}
+              <input
+                type="file"
+                aria-label="Adjuntar evidencia a la respuesta"
+                accept=".png,.jpg,.jpeg,.pdf,.txt,.webp"
+                onChange={(evento) => {
+                  setArchivoRespuesta(evento.target.files?.[0] ?? null);
+                  evento.target.value = '';
+                }}
+              />
+            </label>
+          ) : (
+            <p className="hilo-composer-ayuda">
+              Para fotos o PDF del problema usa la pestaña Evidencias.
+            </p>
+          )}
+          <Button type="primary" onClick={() => void enviarMensaje()} disabled={!texto.trim()}>
+            {puedeAdjuntarRespuesta ? 'Enviar respuesta' : 'Enviar'}
+          </Button>
+        </div>
         {archivoRespuesta && (
           <button type="button" className="hilo-quitar-archivo" onClick={() => setArchivoRespuesta(null)}>
-            Quitar {archivoRespuesta.name}
+            Quitar archivo adjunto
           </button>
         )}
       </div>
+    );
+  }
+
+  function tarjetaSeguimiento() {
+    const mensajesSoporte = ticket.mensajes.filter(
+      (mensaje) => mensaje.autorTipo === 'TECNICO' || mensaje.autorTipo === 'AGENTE_IA',
+    );
+    const ultimoSoporte = mensajesSoporte[mensajesSoporte.length - 1];
+    return (
+      <article className="panel-tarjeta seguimiento-tarjeta">
+        <h2>{esMio ? 'Seguimiento de tu caso' : 'Seguimiento'}</h2>
+        <div className="dato-fila">
+          <span>Quién atiende</span>
+          <span>{ticket.responsable?.nombre ?? 'Aún sin asignar'}</span>
+        </div>
+        <div className="dato-fila">
+          <span>Estado</span>
+          <span>
+            {ticket.estadoNombre} · Nivel {ticket.nivel.replace('N', '')}
+          </span>
+        </div>
+        <div className="dato-fila">
+          <span>Última respuesta de soporte</span>
+          <span>
+            {ultimoSoporte
+              ? `${ultimoSoporte.autor}: ${ultimoSoporte.contenido}`
+              : 'Soporte aún no ha respondido en el chat'}
+          </span>
+        </div>
+        {ticket.fechaObjetivoSolucion && (
+          <div className="dato-fila">
+            <span>ANS</span>
+            <span>Vence en {restanteAns(ticket.fechaObjetivoSolucion)}</span>
+          </div>
+        )}
+        <div className="seguimiento-acciones">
+          <Button type="primary" onClick={() => setPestana('hilo')}>
+            Ver conversación
+          </Button>
+          <Button onClick={() => setPestana('seguimiento')}>Ver historial</Button>
+        </div>
+      </article>
     );
   }
 
@@ -549,7 +610,7 @@ export function TicketDetallePage() {
             ['info', 'Información'],
             ['hilo', 'Conversación'],
             ['evidencias', `Evidencias (${ticket.adjuntos.length})`],
-            ['historial', 'Historial'],
+            ['seguimiento', esMio ? 'Seguimiento' : 'Historial'],
           ] as const
         ).map(([clave, etiqueta]) => (
           <Button key={clave} type={pestana === clave ? 'primary' : 'default'} onClick={() => setPestana(clave)}>
@@ -560,6 +621,7 @@ export function TicketDetallePage() {
 
       {pestana === 'info' && (
         <div className="detalle-dos">
+          {tarjetaSeguimiento()}
           <article className="panel-tarjeta">
             <h2>Datos generales</h2>
             <div className="dato-fila">
@@ -602,16 +664,6 @@ export function TicketDetallePage() {
                 <span>{ticket.solucionAplicada}</span>
               </div>
             )}
-          </article>
-
-          <article className="panel-tarjeta">
-            <h2>Conversación en vivo</h2>
-            <div className="hilo-vivo" ref={hiloRef}>
-              {ticket.mensajes.slice(-8).map(burbuja)}
-              {ticket.mensajes.length === 0 && <p>Sin mensajes todavía.</p>}
-              {escribiendo && <p className="hilo-escribiendo">Alguien está escribiendo…</p>}
-            </div>
-            {composer()}
           </article>
 
           {sesion?.permisos.includes('tickets.escalar') && (
@@ -766,19 +818,41 @@ export function TicketDetallePage() {
         </article>
       )}
 
-      {pestana === 'historial' && (
-        <article className="panel-tarjeta">
-          <ol className="linea-tiempo">
-            {linea.map((fila, indice) => (
-              <li key={`${fila.fecha}-${indice}`}>
-                <time>{new Date(fila.fecha).toLocaleString('es-CO')}</time>
-                <strong>{fila.tipo}</strong>
-                <span>{fila.quien}</span>
-              </li>
-            ))}
-            {linea.length === 0 && <li className="sin-punto">Sin movimientos todavía.</li>}
-          </ol>
-        </article>
+      {pestana === 'seguimiento' && (
+        <div className="detalle-dos">
+          {tarjetaSeguimiento()}
+          <article className="panel-tarjeta">
+            <h2>{esMio ? 'Historial de tu caso' : 'Historial'}</h2>
+            <p className="seguimiento-intro">
+              {esMio
+                ? 'Aquí ves qué ha hecho el equipo de soporte con tu solicitud: asignación, cambios de estado y respuestas.'
+                : 'Registro auditable de estados, responsables y movimientos del ticket.'}
+            </p>
+            <ol className="linea-tiempo">
+              {linea.map((fila, indice) => (
+                <li key={`${fila.fecha}-${indice}`}>
+                  <time>{new Date(fila.fecha).toLocaleString('es-CO')}</time>
+                  <strong>{fila.tipo}</strong>
+                  <span>{fila.quien}</span>
+                </li>
+              ))}
+              {ticket.mensajes
+                .filter((mensaje) => mensaje.autorTipo === 'TECNICO' || mensaje.autorTipo === 'AGENTE_IA')
+                .map((mensaje) => (
+                  <li key={`msg-${mensaje.id}`}>
+                    <time>{new Date(mensaje.fecha).toLocaleString('es-CO')}</time>
+                    <strong>Respuesta de soporte</strong>
+                    <span>
+                      {mensaje.autor}: {mensaje.contenido}
+                    </span>
+                  </li>
+                ))}
+              {linea.length === 0 && ticket.mensajes.every((mensaje) => mensaje.autorTipo === 'USUARIO') && (
+                <li className="sin-punto">Todavía no hay movimientos de soporte.</li>
+              )}
+            </ol>
+          </article>
+        </div>
       )}
 
       <Modal
