@@ -243,11 +243,26 @@ export function TicketDetallePage() {
   }
 
   const esMio = sesion?.id === ticket.solicitante.id;
-  const esTecnico = sesion?.rol === 'TECNICO' || sesion?.rol === 'ADMINISTRADOR';
+  const esTecnico =
+    sesion?.rol === 'TECNICO' ||
+    sesion?.rol === 'ADMINISTRADOR' ||
+    Boolean(sesion?.permisos?.includes('tickets.ver_sede'));
   const prioridadAlta =
     (ticket.prioridad?.nombre ?? '').toLowerCase().includes('alta') ||
     (ticket.prioridad?.nombre ?? '').toLowerCase().includes('crítica') ||
     (ticket.prioridad?.nombre ?? '').toLowerCase().includes('critica');
+
+  function esImagenArchivo(adjunto: Adjunto) {
+    return Boolean(adjunto.mime?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(adjunto.nombre));
+  }
+
+  function esPdfArchivo(adjunto: Adjunto) {
+    return Boolean(adjunto.mime === 'application/pdf' || /\.pdf$/i.test(adjunto.nombre));
+  }
+
+  function urlEvidencia(adjuntoId: string, ver = false) {
+    return `/api/tickets/${ticket.id}/adjuntos/${adjuntoId}${ver ? '?ver=1' : ''}`;
+  }
 
   function burbuja(mensaje: Mensaje) {
     const propio =
@@ -293,9 +308,9 @@ export function TicketDetallePage() {
     );
   }
 
-  const urlVisor = visor ? `/api/tickets/${ticket.id}/adjuntos/${visor.id}?ver=1` : '';
-  const esImagen = Boolean(visor?.mime?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(visor?.nombre ?? ''));
-  const esPdf = Boolean(visor?.mime === 'application/pdf' || /\.pdf$/i.test(visor?.nombre ?? ''));
+  const urlVisor = visor ? urlEvidencia(visor.id, true) : '';
+  const esImagen = visor ? esImagenArchivo(visor) : false;
+  const esPdf = visor ? esPdfArchivo(visor) : false;
 
   return (
     <section>
@@ -493,24 +508,38 @@ export function TicketDetallePage() {
                 }}
               />
             </label>
-            <p>Fotos, capturas o PDF del caso. Puedes eliminar si te equivocaste.</p>
+            <p>Fotos, capturas o PDF del caso. Ábrelas en el visor o elimínalas si te equivocaste.</p>
           </div>
           <div className="evidencias-rejilla">
             {ticket.adjuntos.map((adjunto) => {
               const puedeBorrar =
                 esTecnico || adjunto.subidoPorId === sesion?.id || ticket.solicitante.id === sesion?.id;
+              const previsualizable = esImagenArchivo(adjunto) || esPdfArchivo(adjunto);
               return (
                 <div className="evidencia-card" key={adjunto.id}>
-                  <strong>{adjunto.nombre}</strong>
+                  <button
+                    type="button"
+                    className="evidencia-preview"
+                    onClick={() => setVisor(adjunto)}
+                    aria-label={`Ver ${adjunto.nombre}`}
+                  >
+                    {esImagenArchivo(adjunto) ? (
+                      <img src={urlEvidencia(adjunto.id, true)} alt="" />
+                    ) : esPdfArchivo(adjunto) ? (
+                      <span className="evidencia-pdf-badge">PDF</span>
+                    ) : (
+                      <span className="evidencia-pdf-badge">ARCHIVO</span>
+                    )}
+                  </button>
+                  <strong title={adjunto.nombre}>{adjunto.nombre}</strong>
                   <span>{Math.max(1, Math.round(adjunto.tamano / 1024))} KB</span>
                   <div className="evidencia-acciones">
-                    {esTecnico ? (
-                      <Button size="small" type="primary" onClick={() => setVisor(adjunto)}>
-                        Ver
-                      </Button>
-                    ) : (
-                      <a href={`/api/tickets/${ticket.id}/adjuntos/${adjunto.id}`}>Descargar</a>
-                    )}
+                    <Button size="small" type="primary" onClick={() => setVisor(adjunto)}>
+                      {previsualizable ? 'Ver' : 'Abrir'}
+                    </Button>
+                    <a href={urlEvidencia(adjunto.id)} download={adjunto.nombre}>
+                      <Button size="small">Descargar</Button>
+                    </a>
                     {puedeBorrar && (
                       <Button size="small" danger onClick={() => void eliminarEvidencia(adjunto.id)}>
                         Eliminar
@@ -549,20 +578,24 @@ export function TicketDetallePage() {
             Cerrar
           </Button>,
           visor ? (
-            <a key="descargar" href={`/api/tickets/${ticket.id}/adjuntos/${visor.id}`}>
+            <a key="descargar" href={urlEvidencia(visor.id)} download={visor.nombre}>
               <Button>Descargar</Button>
             </a>
           ) : null,
         ]}
-        width={920}
+        width={960}
         destroyOnClose
+        className="modal-visor-evidencia"
       >
         {visor && esImagen && <img className="visor-evidencia" src={urlVisor} alt={visor.nombre} />}
         {visor && esPdf && <iframe className="visor-evidencia-pdf" title={visor.nombre} src={urlVisor} />}
         {visor && !esImagen && !esPdf && (
           <p>
             Este tipo de archivo no tiene vista previa.{' '}
-            <a href={`/api/tickets/${ticket.id}/adjuntos/${visor.id}`}>Descárgalo aquí</a>.
+            <a href={urlEvidencia(visor.id)} download={visor.nombre}>
+              Descárgalo aquí
+            </a>
+            .
           </p>
         )}
       </Modal>
