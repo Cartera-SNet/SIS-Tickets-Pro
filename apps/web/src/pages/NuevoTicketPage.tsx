@@ -8,6 +8,11 @@ type Categoria = { id: string; nombre: string; subcategorias: Subcategoria[] };
 type Sede = { id: string; nombre: string; ubicaciones: { id: string; nombre: string; piso: string | null }[] };
 type Equipo = { id: string; placa: string | null; tipo: string };
 
+function tokenCsrf() {
+  const coincidencia = document.cookie.match(/(?:^|; )sis_csrf=([^;]*)/);
+  return coincidencia ? decodeURIComponent(coincidencia[1]) : null;
+}
+
 export function NuevoTicketPage() {
   const navigate = useNavigate();
   const [form] = Form.useForm();
@@ -17,8 +22,10 @@ export function NuevoTicketPage() {
   const [categoriaId, setCategoriaId] = useState<string>();
   const [tiposElegidos, setTiposElegidos] = useState<string[]>([]);
   const [observacionOtros, setObservacionOtros] = useState('');
+  const [evidencias, setEvidencias] = useState<File[]>([]);
   const [modalAbierto, setModalAbierto] = useState(false);
   const [aviso, setAviso] = useState('');
+  const [enviando, setEnviando] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -109,6 +116,7 @@ export function NuevoTicketPage() {
       setModalAbierto(true);
       return;
     }
+    setEnviando(true);
     try {
       const idsReales = tiposElegidos.filter((id) => id !== '__otros__');
       const creado = await api<{ id: string; numero: string; prioridad: string }>('/api/tickets', {
@@ -122,9 +130,31 @@ export function NuevoTicketPage() {
           equipoId: valores.equipoId || undefined,
         },
       });
+      const csrf = tokenCsrf();
+      for (const archivo of evidencias) {
+        const datos = new FormData();
+        datos.append('archivo', archivo);
+        const respuesta = await fetch(`/api/tickets/${creado.id}/adjuntos`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: csrf ? { 'x-csrf-token': csrf } : {},
+          body: datos,
+        });
+        if (!respuesta.ok) {
+          const cuerpo = (await respuesta.json()) as { error?: { message?: string } };
+          setAviso(
+            cuerpo.error?.message ??
+              `El caso ${creado.numero} se creó, pero no se pudo subir ${archivo.name}. Súbelo en Evidencias.`,
+          );
+          navigate(`/tickets/${creado.id}`);
+          return;
+        }
+      }
       navigate(`/tickets/${creado.id}`);
     } catch (error) {
       setAviso(error instanceof ErrorHttp ? error.message : 'No se pudo crear el caso.');
+    } finally {
+      setEnviando(false);
     }
   }
 
@@ -185,7 +215,41 @@ export function NuevoTicketPage() {
           />
         </Form.Item>
 
-        <Button type="primary" htmlType="submit">
+        <div className="evidencias-alta">
+          <label className="boton-archivo">
+            Adjuntar evidencia
+            <input
+              type="file"
+              accept=".png,.jpg,.jpeg,.pdf,.txt,.webp"
+              multiple
+              aria-label="Evidencias del caso"
+              onChange={(evento) => {
+                const nuevos = Array.from(evento.target.files ?? []);
+                if (nuevos.length) {
+                  setEvidencias((actual) => [...actual, ...nuevos].slice(0, 5));
+                }
+                evento.target.value = '';
+              }}
+            />
+          </label>
+          <p>Fotos, capturas o PDF (hasta 5 archivos, 5 MB c/u). También podrás agregarlas después en el caso.</p>
+          {evidencias.length > 0 && (
+            <ul className="evidencias-alta-lista">
+              {evidencias.map((archivo, indice) => (
+                <li key={`${archivo.name}-${indice}`}>
+                  <span>
+                    {archivo.name} · {Math.max(1, Math.round(archivo.size / 1024))} KB
+                  </span>
+                  <button type="button" onClick={() => setEvidencias((actual) => actual.filter((_, i) => i !== indice))}>
+                    Quitar
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <Button type="primary" htmlType="submit" loading={enviando} disabled={enviando}>
           Enviar caso
         </Button>
       </Form>

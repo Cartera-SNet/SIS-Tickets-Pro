@@ -958,6 +958,45 @@ button:focus-visible,
   font-variant-numeric: tabular-nums;
 }
 
+.evidencias-alta {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.evidencias-alta > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.evidencias-alta-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.evidencias-alta-lista li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card-2);
+}
+
+.evidencias-alta-lista button {
+  border: 0;
+  background: transparent;
+  color: #f0a0a0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .evidencias-subir {
   display: flex;
   flex-wrap: wrap;

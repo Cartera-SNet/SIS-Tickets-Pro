@@ -283,14 +283,19 @@ export function TicketDetallePage() {
 
   async function enviarMensaje() {
     const contenido = texto.trim();
-    if (!contenido) {
+    const archivo = archivoRespuesta;
+    const soyDuenio = Boolean(sesion?.id && ticket?.solicitante.id === sesion.id);
+    const comoEquipo = sesion?.rol === 'TECNICO' || sesion?.rol === 'ADMINISTRADOR';
+    if (!contenido && !(archivo && soyDuenio)) {
       return;
     }
-    const archivo = archivoRespuesta;
     setTexto('');
     setArchivoRespuesta(null);
     try {
-      if (archivo) {
+      if (archivo && comoEquipo) {
+        if (!contenido) {
+          throw new ErrorHttp(400, 'Escribe la respuesta al solicitante para adjuntar la evidencia.');
+        }
         const datos = new FormData();
         datos.append('archivo', archivo);
         datos.append('mensaje', contenido);
@@ -319,6 +324,12 @@ export function TicketDetallePage() {
               : actual.mensajes;
           return { ...actual, adjuntos, mensajes };
         });
+        return;
+      }
+      if (archivo && soyDuenio) {
+        await subirEvidenciaSolicitante(archivo);
+      }
+      if (!contenido) {
         return;
       }
       const mensaje = await api<Mensaje>(`/api/tickets/${id}/mensajes`, {
@@ -468,8 +479,9 @@ export function TicketDetallePage() {
   }
 
   function composer() {
+    const puedeAdjuntarChat = puedeAdjuntarRespuesta || esMio;
     return (
-      <div className={`hilo-composer ${puedeAdjuntarRespuesta ? 'hilo-composer-equipo' : ''}`}>
+      <div className={`hilo-composer ${puedeAdjuntarChat ? 'hilo-composer-equipo' : ''}`}>
         <Input.TextArea
           value={texto}
           onChange={(evento) => {
@@ -486,16 +498,16 @@ export function TicketDetallePage() {
           placeholder={
             puedeAdjuntarRespuesta
               ? 'Escribe la respuesta al solicitante…'
-              : 'Escribe un mensaje o pregunta a soporte…'
+              : 'Escribe un mensaje o adjunta una evidencia del problema…'
           }
         />
         <div className="hilo-composer-barra">
-          {puedeAdjuntarRespuesta ? (
+          {puedeAdjuntarChat ? (
             <label className="boton-archivo">
               {archivoRespuesta ? `Archivo: ${archivoRespuesta.name}` : 'Adjuntar evidencia'}
               <input
                 type="file"
-                aria-label="Adjuntar evidencia a la respuesta"
+                aria-label="Adjuntar evidencia"
                 accept=".png,.jpg,.jpeg,.pdf,.txt,.webp"
                 onChange={(evento) => {
                   setArchivoRespuesta(evento.target.files?.[0] ?? null);
@@ -503,12 +515,12 @@ export function TicketDetallePage() {
                 }}
               />
             </label>
-          ) : (
-            <p className="hilo-composer-ayuda">
-              Para fotos o PDF del problema usa la pestaña Evidencias.
-            </p>
-          )}
-          <Button type="primary" onClick={() => void enviarMensaje()} disabled={!texto.trim()}>
+          ) : null}
+          <Button
+            type="primary"
+            onClick={() => void enviarMensaje()}
+            disabled={!texto.trim() && !(esMio && archivoRespuesta)}
+          >
             {puedeAdjuntarRespuesta ? 'Enviar respuesta' : 'Enviar'}
           </Button>
         </div>

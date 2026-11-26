@@ -181,7 +181,7 @@ export function AppLayout() {
           {sesion && !rutaPermitida(location.pathname, sesion.permisos) ? (
             <p>Esta pantalla no está en tu rol. Tus solicitudes están en Tickets.</p>
           ) : (
-            <Outlet />
+            <Outlet context={sesion} />
           )}
         </Content>
       </Layout>
