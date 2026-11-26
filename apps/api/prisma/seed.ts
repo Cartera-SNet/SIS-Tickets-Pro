@@ -84,7 +84,14 @@ async function main(): Promise<void> {
     create: { id: IDS.categoria, nombre: 'Hardware' },
   });
 
-  for (const nombre of ['Monitor / pantalla', 'Teclado o mouse', 'PC o portátil no enciende', 'Equipo lento o se apaga', 'Otros']) {
+  for (const nombre of [
+    'El monitor queda negro',
+    'El teclado no escribe',
+    'El mouse no se mueve',
+    'La PC no enciende',
+    'El portátil se apaga solo',
+    'Otros',
+  ]) {
     const existe = await prisma.subcategoria.findFirst({
       where: { categoriaId: IDS.categoria, nombre, deletedAt: null },
     });

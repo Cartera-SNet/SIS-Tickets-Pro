@@ -19,7 +19,6 @@ export function NuevoTicketPage() {
   const [observacionOtros, setObservacionOtros] = useState('');
   const [modalAbierto, setModalAbierto] = useState(false);
   const [aviso, setAviso] = useState('');
-  const [sugerencias, setSugerencias] = useState<{ id: string; codigo: string; titulo: string; pasos: string }[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -34,18 +33,6 @@ export function NuevoTicketPage() {
       })
       .catch((error: unknown) => setAviso(error instanceof ErrorHttp ? error.message : 'No se cargaron los catálogos.'));
   }, []);
-
-  useEffect(() => {
-    if (!categoriaId) {
-      setSugerencias([]);
-      return;
-    }
-    api<{ id: string; codigo: string; titulo: string; pasos: string }[]>(
-      `/api/conocimiento/sugerencias?categoriaId=${categoriaId}`,
-    )
-      .then(setSugerencias)
-      .catch(() => setSugerencias([]));
-  }, [categoriaId]);
 
   const categoriaActiva = useMemo(
     () => categorias.find((item) => item.id === categoriaId) ?? null,
@@ -68,7 +55,11 @@ export function NuevoTicketPage() {
   const resumenTipos = useMemo(() => {
     const nombres = tiposDisponibles
       .filter((tipo) => tiposElegidos.includes(tipo.id))
-      .map((tipo) => (tipo.nombre.toLowerCase() === 'otros' && observacionOtros.trim() ? `Otros: ${observacionOtros.trim()}` : tipo.nombre));
+      .map((tipo) =>
+        tipo.nombre.toLowerCase() === 'otros' && observacionOtros.trim()
+          ? `Otros: ${observacionOtros.trim()}`
+          : tipo.nombre,
+      );
     return nombres.join(' · ');
   }, [tiposDisponibles, tiposElegidos, observacionOtros]);
 
@@ -142,26 +133,10 @@ export function NuevoTicketPage() {
       <div className="pagina-cabecera">
         <div>
           <h1>Nuevo ticket</h1>
-          <p>Cuéntanos qué pasa con el equipo, la red o un programa. Mira las sugerencias antes de enviar.</p>
+          <p>Cuéntanos qué pasa con el equipo, la red o un programa y elige el tipo en la categoría.</p>
         </div>
       </div>
       {aviso && <p className="aviso-db">{aviso}</p>}
-      {sugerencias.length > 0 && (
-        <aside className="panel-tarjeta" style={{ marginBottom: 14 }}>
-          <h2>Antes de enviar, mira esto</h2>
-          <ul>
-            {sugerencias.map((articulo) => (
-              <li key={articulo.id}>
-                <strong>
-                  {articulo.codigo} · {articulo.titulo}
-                </strong>
-                <p>{articulo.pasos}</p>
-              </li>
-            ))}
-          </ul>
-          <p>Puedes enviar el caso aunque no te haya servido.</p>
-        </aside>
-      )}
 
       <Form className="panel-tarjeta" layout="vertical" form={form} onFinish={(valores) => void enviar(valores)}>
         <Form.Item
