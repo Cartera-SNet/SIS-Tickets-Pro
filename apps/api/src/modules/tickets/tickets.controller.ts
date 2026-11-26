@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpException,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -15,6 +17,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { IsArray, IsBoolean, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import type { Request } from 'express';
+import { memoryStorage } from 'multer';
 import { CualquierPermiso, PermisoGuard } from '../auth/permiso.guard';
 import { SesionGuard } from '../auth/sesion.guard';
 import type { RolAcceso } from '../auth/reglas-acceso';
@@ -146,13 +149,27 @@ export class TicketsController {
 
   @Post(':id/adjuntos')
   @CualquierPermiso('tickets.ver_propios', 'tickets.ver_sede')
-  @UseInterceptors(FileInterceptor('archivo', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor('archivo', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
   adjuntar(
     @Req() peticion: Request,
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFile() archivo: { originalname: string; buffer: Buffer; mimetype: string; size: number },
+    @Body() cuerpo: { mensaje?: string },
   ) {
-    return this.tickets.adjuntar(principalDe(peticion), id, archivo);
+    if (!archivo) {
+      throw new HttpException(
+        { code: 'validation_error', message: 'Debes seleccionar un archivo.' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    return this.tickets.adjuntar(principalDe(peticion), id, archivo, {
+      mensajeRespuesta: typeof cuerpo?.mensaje === 'string' ? cuerpo.mensaje : undefined,
+    });
   }
 
   @Get(':id/adjuntos/:adjuntoId')

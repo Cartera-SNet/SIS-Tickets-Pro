@@ -5,6 +5,14 @@ import { ErrorHttp, type Sesion, api } from '../api/http';
 import { conectarTiempoReal } from '../api/tiempo-real';
 import { claseAns, claseEstado, claseNivel, restanteAns } from '../ui/etiquetas';
 
+type Adjunto = {
+  id: string;
+  nombre: string;
+  tamano: number;
+  mime?: string;
+  subidoPorId?: string | null;
+};
+
 type Mensaje = {
   id: string;
   canal: string;
@@ -12,14 +20,8 @@ type Mensaje = {
   autor: string;
   contenido: string;
   fecha: string;
-};
-
-type Adjunto = {
-  id: string;
-  nombre: string;
-  tamano: number;
-  mime?: string;
-  subidoPorId?: string | null;
+  adjuntoId?: string | null;
+  adjunto?: Adjunto | null;
 };
 
 type Detalle = {
@@ -47,12 +49,26 @@ type Detalle = {
   historial: { id: string; tipo: string; fecha: string; datosNuevos: unknown }[];
 };
 
+function esImagenArchivo(adjunto: Pick<Adjunto, 'nombre' | 'mime'>) {
+  return Boolean(adjunto.mime?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(adjunto.nombre));
+}
+
+function esPdfArchivo(adjunto: Pick<Adjunto, 'nombre' | 'mime'>) {
+  return Boolean(adjunto.mime === 'application/pdf' || /\.pdf$/i.test(adjunto.nombre));
+}
+
+function tokenCsrf() {
+  const coincidencia = document.cookie.match(/(?:^|; )sis_csrf=([^;]*)/);
+  return coincidencia ? decodeURIComponent(coincidencia[1]) : null;
+}
+
 export function TicketDetallePage() {
   const { id = '' } = useParams();
   const sesion = useOutletContext<Sesion | null>();
   const [ticket, setTicket] = useState<Detalle | null>(null);
   const [aviso, setAviso] = useState('');
   const [texto, setTexto] = useState('');
+  const [archivoRespuesta, setArchivoRespuesta] = useState<File | null>(null);
   const [calificacion, setCalificacion] = useState<number>(5);
   const [tecnicos, setTecnicos] = useState<{ id: string; nombre: string; niveles: string[] }[]>([]);
   const socketRef = useRef<ReturnType<typeof conectarTiempoReal> | null>(null);
@@ -61,6 +77,18 @@ export function TicketDetallePage() {
   const [pestana, setPestana] = useState<'info' | 'hilo' | 'evidencias' | 'historial'>('info');
   const [linea, setLinea] = useState<{ fecha: string; tipo: string; quien: string; detalle: unknown }[]>([]);
   const [visor, setVisor] = useState<Adjunto | null>(null);
+  const [urlVisor, setUrlVisor] = useState('');
+  const [errorVisor, setErrorVisor] = useState('');
+  const [miniaturas, setMiniaturas] = useState<Record<string, string>>({});
+  const [fallosMiniatura, setFallosMiniatura] = useState<Record<string, string>>({});
+  const blobsRef = useRef<string[]>([]);
+  const miniaturasPedidas = useRef<Set<string>>(new Set());
+
+  function liberarBlobs(urls: string[]) {
+    for (const url of urls) {
+      URL.revokeObjectURL(url);
+    }
+  }
 
   function cargar() {
     api<Detalle>(`/api/tickets/${id}`)
@@ -117,7 +145,10 @@ export function TicketDetallePage() {
           }
           return {
             ...actual,
-            adjuntos: [...actual.adjuntos, { id: evento.id, nombre: evento.nombre, tamano: evento.tamano, mime: evento.mime }],
+            adjuntos: [
+              ...actual.adjuntos,
+              { id: evento.id, nombre: evento.nombre, tamano: evento.tamano, mime: evento.mime, subidoPorId: evento.subidoPorId },
+            ],
           };
         });
       },
@@ -143,13 +174,153 @@ export function TicketDetallePage() {
     }
   }, [ticket?.mensajes.length, pestana]);
 
+  useEffect(() => {
+    return () => {
+      liberarBlobs(blobsRef.current);
+      blobsRef.current = [];
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelado = false;
+    async function abrirVisor() {
+      setErrorVisor('');
+      setUrlVisor('');
+      if (!visor || !ticket) {
+        return;
+      }
+      try {
+        const respuesta = await fetch(`/api/tickets/${ticket.id}/adjuntos/${visor.id}?ver=1`, {
+          credentials: 'include',
+        });
+        if (!respuesta.ok) {
+          let detalle = 'No se pudo abrir la evidencia.';
+          try {
+            const cuerpo = (await respuesta.json()) as { error?: { message?: string } };
+            detalle = cuerpo.error?.message ?? detalle;
+          } catch {
+            /* ignore */
+          }
+          if (!cancelado) {
+            setErrorVisor(detalle);
+          }
+          return;
+        }
+        const blob = await respuesta.blob();
+        const url = URL.createObjectURL(blob);
+        blobsRef.current.push(url);
+        if (cancelado) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        setUrlVisor(url);
+      } catch {
+        if (!cancelado) {
+          setErrorVisor('No se pudo abrir la evidencia.');
+        }
+      }
+    }
+    void abrirVisor();
+    return () => {
+      cancelado = true;
+    };
+  }, [visor, ticket?.id]);
+
+  const idsAdjuntos = ticket?.adjuntos.map((item) => item.id).join(',') ?? '';
+
+  useEffect(() => {
+    if (!ticket || pestana !== 'evidencias') {
+      return;
+    }
+    let cancelado = false;
+    const pendientes = ticket.adjuntos.filter(
+      (adjunto) => esImagenArchivo(adjunto) && !miniaturasPedidas.current.has(adjunto.id),
+    );
+    for (const adjunto of pendientes) {
+      miniaturasPedidas.current.add(adjunto.id);
+    }
+    void (async () => {
+      for (const adjunto of pendientes) {
+        if (cancelado) {
+          return;
+        }
+        try {
+          const respuesta = await fetch(`/api/tickets/${ticket.id}/adjuntos/${adjunto.id}?ver=1`, {
+            credentials: 'include',
+          });
+          if (!respuesta.ok) {
+            let detalle = 'Archivo no disponible';
+            try {
+              const cuerpo = (await respuesta.json()) as { error?: { message?: string } };
+              detalle = cuerpo.error?.message ?? detalle;
+            } catch {
+              /* ignore */
+            }
+            if (!cancelado) {
+              setFallosMiniatura((actual) => ({ ...actual, [adjunto.id]: detalle }));
+            }
+            continue;
+          }
+          const blob = await respuesta.blob();
+          const url = URL.createObjectURL(blob);
+          blobsRef.current.push(url);
+          if (cancelado) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          setMiniaturas((actual) => ({ ...actual, [adjunto.id]: url }));
+        } catch {
+          if (!cancelado) {
+            setFallosMiniatura((actual) => ({ ...actual, [adjunto.id]: 'Archivo no disponible' }));
+          }
+        }
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [idsAdjuntos, pestana, ticket]);
+
   async function enviarMensaje() {
     const contenido = texto.trim();
     if (!contenido) {
       return;
     }
+    const archivo = archivoRespuesta;
     setTexto('');
+    setArchivoRespuesta(null);
     try {
+      if (archivo) {
+        const datos = new FormData();
+        datos.append('archivo', archivo);
+        datos.append('mensaje', contenido);
+        const csrf = tokenCsrf();
+        const respuesta = await fetch(`/api/tickets/${id}/adjuntos`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: csrf ? { 'x-csrf-token': csrf } : {},
+          body: datos,
+        });
+        if (!respuesta.ok) {
+          const cuerpo = (await respuesta.json()) as { error?: { message?: string } };
+          throw new ErrorHttp(respuesta.status, cuerpo.error?.message ?? 'No se pudo enviar la respuesta con evidencia.');
+        }
+        const cuerpo = (await respuesta.json()) as Adjunto & { mensaje?: Mensaje };
+        setTicket((actual) => {
+          if (!actual) {
+            return actual;
+          }
+          const adjuntos = actual.adjuntos.some((item) => item.id === cuerpo.id)
+            ? actual.adjuntos
+            : [...actual.adjuntos, { id: cuerpo.id, nombre: cuerpo.nombre, tamano: cuerpo.tamano, mime: cuerpo.mime, subidoPorId: cuerpo.subidoPorId }];
+          const mensajes =
+            cuerpo.mensaje && !actual.mensajes.some((item) => item.id === cuerpo.mensaje?.id)
+              ? [...actual.mensajes, cuerpo.mensaje]
+              : actual.mensajes;
+          return { ...actual, adjuntos, mensajes };
+        });
+        return;
+      }
       const mensaje = await api<Mensaje>(`/api/tickets/${id}/mensajes`, {
         method: 'POST',
         body: { contenido },
@@ -165,18 +336,19 @@ export function TicketDetallePage() {
       });
     } catch (error) {
       setTexto(contenido);
+      setArchivoRespuesta(archivo);
       setAviso(error instanceof ErrorHttp ? error.message : 'No se pudo enviar el mensaje.');
     }
   }
 
-  async function subir(archivo: File) {
+  async function subirEvidenciaSolicitante(archivo: File) {
     const datos = new FormData();
     datos.append('archivo', archivo);
-    const csrf = document.cookie.match(/(?:^|; )sis_csrf=([^;]*)/)?.[1];
+    const csrf = tokenCsrf();
     const respuesta = await fetch(`/api/tickets/${id}/adjuntos`, {
       method: 'POST',
       credentials: 'include',
-      headers: csrf ? { 'x-csrf-token': decodeURIComponent(csrf) } : {},
+      headers: csrf ? { 'x-csrf-token': csrf } : {},
       body: datos,
     });
     if (!respuesta.ok) {
@@ -253,14 +425,6 @@ export function TicketDetallePage() {
     (ticket.prioridad?.nombre ?? '').toLowerCase().includes('crítica') ||
     (ticket.prioridad?.nombre ?? '').toLowerCase().includes('critica');
 
-  function esImagenArchivo(adjunto: Adjunto) {
-    return Boolean(adjunto.mime?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(adjunto.nombre));
-  }
-
-  function esPdfArchivo(adjunto: Adjunto) {
-    return Boolean(adjunto.mime === 'application/pdf' || /\.pdf$/i.test(adjunto.nombre));
-  }
-
   function urlEvidencia(adjuntoId: string, ver = false) {
     return `/api/tickets/${ticketId}/adjuntos/${adjuntoId}${ver ? '?ver=1' : ''}`;
   }
@@ -268,6 +432,7 @@ export function TicketDetallePage() {
   function burbuja(mensaje: Mensaje) {
     const propio =
       mensaje.autorTipo === 'TECNICO' || mensaje.autorTipo === 'AGENTE_IA' || mensaje.autorTipo === 'SISTEMA';
+    const adjunto = mensaje.adjunto;
     return (
       <div className={`hilo-msg ${propio ? 'salida' : 'entrada'}`} key={mensaje.id}>
         <header>
@@ -280,13 +445,18 @@ export function TicketDetallePage() {
           </time>
         </header>
         <div>{mensaje.contenido}</div>
+        {adjunto && (
+          <button type="button" className="hilo-adjunto" onClick={() => setVisor(adjunto)}>
+            Evidencia: {adjunto.nombre}
+          </button>
+        )}
       </div>
     );
   }
 
   function composer() {
     return (
-      <div className="hilo-composer">
+      <div className={`hilo-composer ${esTecnico && !esMio ? 'con-adjunto' : ''}`}>
         <Input.TextArea
           value={texto}
           onChange={(evento) => {
@@ -300,16 +470,38 @@ export function TicketDetallePage() {
             }
           }}
           rows={2}
-          placeholder="Escribe un mensaje (también llega al WhatsApp del solicitante)…"
+          placeholder={
+            esTecnico && !esMio
+              ? 'Responde al solicitante… (puedes adjuntar evidencia con la respuesta)'
+              : 'Escribe un mensaje (también llega al WhatsApp del solicitante)…'
+          }
         />
+        {esTecnico && !esMio && (
+          <label className="boton-archivo boton-archivo-compacto">
+            {archivoRespuesta ? archivoRespuesta.name : 'Adjuntar'}
+            <input
+              type="file"
+              aria-label="Evidencia de la respuesta"
+              accept=".png,.jpg,.jpeg,.pdf,.txt,.webp"
+              onChange={(evento) => {
+                setArchivoRespuesta(evento.target.files?.[0] ?? null);
+                evento.target.value = '';
+              }}
+            />
+          </label>
+        )}
         <Button type="primary" onClick={() => void enviarMensaje()} disabled={!texto.trim()}>
           Enviar
         </Button>
+        {archivoRespuesta && (
+          <button type="button" className="hilo-quitar-archivo" onClick={() => setArchivoRespuesta(null)}>
+            Quitar {archivoRespuesta.name}
+          </button>
+        )}
       </div>
     );
   }
 
-  const urlVisor = visor ? urlEvidencia(visor.id, true) : '';
   const esImagen = visor ? esImagenArchivo(visor) : false;
   const esPdf = visor ? esPdfArchivo(visor) : false;
 
@@ -496,20 +688,32 @@ export function TicketDetallePage() {
       {pestana === 'evidencias' && (
         <article className="panel-tarjeta">
           <div className="evidencias-subir">
-            <label className="boton-archivo">
-              Adjuntar evidencia
-              <input
-                type="file"
-                aria-label="Evidencia"
-                accept=".png,.jpg,.jpeg,.pdf,.txt,.webp"
-                onChange={(evento) => {
-                  const archivo = evento.target.files?.[0];
-                  if (archivo) void subir(archivo);
-                  evento.target.value = '';
-                }}
-              />
-            </label>
-            <p>Fotos, capturas o PDF del caso. Ábrelas en el visor o elimínalas si te equivocaste.</p>
+            {esMio ? (
+              <>
+                <label className="boton-archivo">
+                  Adjuntar evidencia
+                  <input
+                    type="file"
+                    aria-label="Evidencia"
+                    accept=".png,.jpg,.jpeg,.pdf,.txt,.webp"
+                    onChange={(evento) => {
+                      const archivo = evento.target.files?.[0];
+                      if (archivo) void subirEvidenciaSolicitante(archivo);
+                      evento.target.value = '';
+                    }}
+                  />
+                </label>
+                <p>Fotos, capturas o PDF del caso. Ábrelas en el visor o elimínalas si te equivocaste.</p>
+              </>
+            ) : (
+              <p>
+                Aquí ves las evidencias del caso. Si eres del equipo, adjunta archivos solo al{' '}
+                <button type="button" className="enlace-inline" onClick={() => setPestana('hilo')}>
+                  responder en Conversación
+                </button>
+                .
+              </p>
+            )}
           </div>
           <div className="evidencias-rejilla">
             {ticket.adjuntos.map((adjunto) => {
@@ -524,8 +728,10 @@ export function TicketDetallePage() {
                     onClick={() => setVisor(adjunto)}
                     aria-label={`Ver ${adjunto.nombre}`}
                   >
-                    {esImagenArchivo(adjunto) ? (
-                      <img src={urlEvidencia(adjunto.id, true)} alt="" />
+                    {esImagenArchivo(adjunto) && miniaturas[adjunto.id] ? (
+                      <img src={miniaturas[adjunto.id]} alt="" />
+                    ) : esImagenArchivo(adjunto) && fallosMiniatura[adjunto.id] ? (
+                      <span className="evidencia-pdf-badge">SIN ARCHIVO</span>
                     ) : esPdfArchivo(adjunto) ? (
                       <span className="evidencia-pdf-badge">PDF</span>
                     ) : (
@@ -534,6 +740,11 @@ export function TicketDetallePage() {
                   </button>
                   <strong title={adjunto.nombre}>{adjunto.nombre}</strong>
                   <span>{Math.max(1, Math.round(adjunto.tamano / 1024))} KB</span>
+                  {fallosMiniatura[adjunto.id] && (
+                    <span className="evidencia-aviso" title={fallosMiniatura[adjunto.id]}>
+                      Archivo no disponible en el servidor
+                    </span>
+                  )}
                   <div className="evidencia-acciones">
                     <Button size="small" type="primary" onClick={() => setVisor(adjunto)}>
                       {previsualizable ? 'Ver' : 'Abrir'}
@@ -578,7 +789,7 @@ export function TicketDetallePage() {
           <Button key="cerrar" onClick={() => setVisor(null)}>
             Cerrar
           </Button>,
-          visor ? (
+          visor && !errorVisor ? (
             <a key="descargar" href={urlEvidencia(visor.id)} download={visor.nombre}>
               <Button>Descargar</Button>
             </a>
@@ -588,9 +799,11 @@ export function TicketDetallePage() {
         destroyOnClose
         className="modal-visor-evidencia"
       >
-        {visor && esImagen && <img className="visor-evidencia" src={urlVisor} alt={visor.nombre} />}
-        {visor && esPdf && <iframe className="visor-evidencia-pdf" title={visor.nombre} src={urlVisor} />}
-        {visor && !esImagen && !esPdf && (
+        {errorVisor && <p className="aviso-db">{errorVisor}</p>}
+        {!errorVisor && !urlVisor && <p>Cargando evidencia…</p>}
+        {visor && esImagen && urlVisor && <img className="visor-evidencia" src={urlVisor} alt={visor.nombre} />}
+        {visor && esPdf && urlVisor && <iframe className="visor-evidencia-pdf" title={visor.nombre} src={urlVisor} />}
+        {visor && !esImagen && !esPdf && !errorVisor && urlVisor && (
           <p>
             Este tipo de archivo no tiene vista previa.{' '}
             <a href={urlEvidencia(visor.id)} download={visor.nombre}>

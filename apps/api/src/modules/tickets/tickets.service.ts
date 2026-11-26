@@ -1,8 +1,8 @@
 import { ESTADO_TICKET } from '@sis/shared';
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { extname, join, resolve } from 'node:path';
+import { basename, extname, isAbsolute, join, resolve, sep } from 'node:path';
 import { HttpException, HttpStatus, Injectable, StreamableFile } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -16,6 +16,40 @@ import { TiempoRealGateway } from '../notificaciones/tiempo-real.gateway';
 
 const EXTENSIONES = new Set(['.png', '.jpg', '.jpeg', '.pdf', '.txt', '.webp']);
 const MAX_BYTES = 5 * 1024 * 1024;
+
+function raizUploads() {
+  return resolve(process.env.UPLOAD_DIR ?? './uploads');
+}
+
+function dentroDeUploads(absoluto: string) {
+  const raiz = raizUploads();
+  const normalizado = resolve(absoluto);
+  return normalizado === raiz || normalizado.startsWith(`${raiz}${sep}`);
+}
+
+/** Resuelve la ruta guardada (relativa o absoluta antigua) al archivo actual en disco. */
+function resolverArchivo(rutaGuardada: string, ticketId: string) {
+  const raiz = raizUploads();
+  const candidatos: string[] = [];
+  if (rutaGuardada) {
+    if (isAbsolute(rutaGuardada)) {
+      candidatos.push(resolve(rutaGuardada));
+      candidatos.push(resolve(raiz, ticketId, basename(rutaGuardada)));
+    } else {
+      candidatos.push(resolve(raiz, rutaGuardada));
+    }
+  }
+  for (const candidato of candidatos) {
+    const normalizado = resolve(candidato);
+    if (!dentroDeUploads(normalizado)) {
+      continue;
+    }
+    if (existsSync(normalizado)) {
+      return normalizado;
+    }
+  }
+  return null;
+}
 
 @Injectable()
 export class TicketsService {
@@ -282,7 +316,13 @@ export class TicketsService {
         equipo: true,
         solicitante: { select: { id: true, nombre: true } },
         responsable: { select: { id: true, nombre: true } },
-        mensajes: { orderBy: { fecha: 'asc' }, include: { autor: { select: { nombre: true } } } },
+        mensajes: {
+          orderBy: { fecha: 'asc' },
+          include: {
+            autor: { select: { nombre: true } },
+            adjunto: { select: { id: true, nombre: true, mime: true, tamano: true } },
+          },
+        },
         adjuntos: { orderBy: { createdAt: 'asc' } },
         historial: { orderBy: { fecha: 'asc' } },
       },
@@ -304,6 +344,15 @@ export class TicketsService {
         autor: mensaje.autor?.nombre ?? 'Agente IA',
         contenido: mensaje.contenido,
         fecha: mensaje.fecha,
+        adjuntoId: mensaje.adjuntoId,
+        adjunto: mensaje.adjunto
+          ? {
+              id: mensaje.adjunto.id,
+              nombre: mensaje.adjunto.nombre,
+              mime: mensaje.adjunto.mime,
+              tamano: mensaje.adjunto.tamano,
+            }
+          : null,
       })),
       adjuntos: ticket.adjuntos.map((adjunto) => ({
         id: adjunto.id,
@@ -328,7 +377,7 @@ export class TicketsService {
         contenido: contenido.trim(),
         estadoEntrega: 'ENTREGADO',
       },
-      include: { autor: { select: { nombre: true } } },
+      include: { autor: { select: { nombre: true } }, adjunto: { select: { id: true, nombre: true, mime: true, tamano: true } } },
     });
     const payload = {
       id: mensaje.id,
@@ -338,13 +387,20 @@ export class TicketsService {
       contenido: mensaje.contenido,
       fecha: mensaje.fecha,
       ticketId,
+      adjuntoId: mensaje.adjuntoId,
+      adjunto: mensaje.adjunto,
     };
     this.tiempo.emitirTicket(ticketId, 'ticket:mensaje', payload);
     return payload;
   }
 
-  async adjuntar(actor: Principal, ticketId: string, archivo: { originalname: string; buffer: Buffer; mimetype: string; size: number }) {
-    await this.detalle(actor, ticketId);
+  async adjuntar(
+    actor: Principal,
+    ticketId: string,
+    archivo: { originalname: string; buffer: Buffer; mimetype: string; size: number },
+    opciones: { mensajeRespuesta?: string } = {},
+  ) {
+    const ticket = await this.detalle(actor, ticketId);
     const extension = extname(archivo.originalname).toLowerCase();
     if (!EXTENSIONES.has(extension) || archivo.size <= 0 || archivo.size > MAX_BYTES) {
       throw new HttpException(
@@ -352,24 +408,111 @@ export class TicketsService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    const carpeta = resolve(process.env.UPLOAD_DIR ?? './uploads', ticketId);
+    if (!archivo.buffer?.length) {
+      throw new HttpException(
+        { code: 'validation_error', message: 'No se recibió el contenido del archivo.' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const esSolicitante = ticket.solicitante.id === actor.id;
+    const esEquipo = actor.rol === 'TECNICO' || actor.rol === 'ADMINISTRADOR';
+    const respuesta = opciones.mensajeRespuesta?.trim() ?? '';
+
+    // Doc §6.1: evidencias del solicitante/técnico. El técnico solo adjunta al responder al solicitante.
+    if (esSolicitante) {
+      if (respuesta) {
+        throw new HttpException(
+          { code: 'validation_error', message: 'El solicitante adjunta evidencias desde la pestaña Evidencias, sin respuesta.' },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    } else if (esEquipo) {
+      if (respuesta.length < 1) {
+        throw new HttpException(
+          {
+            code: 'forbidden',
+            message: 'El equipo solo puede adjuntar evidencias al responder al solicitante en la conversación.',
+          },
+          HttpStatus.FORBIDDEN,
+        );
+      }
+    } else {
+      throw new HttpException(
+        { code: 'forbidden', message: 'No puedes adjuntar evidencias en este caso.' },
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    const raiz = raizUploads();
+    const carpeta = resolve(raiz, ticketId);
     await mkdir(carpeta, { recursive: true });
-    const nombre = `${randomUUID()}${extension}`;
-    const ruta = join(carpeta, nombre);
-    await writeFile(ruta, archivo.buffer);
+    const nombreArchivo = `${randomUUID()}${extension}`;
+    const rutaRelativa = join(ticketId, nombreArchivo).replace(/\\/g, '/');
+    const absoluto = resolve(raiz, rutaRelativa);
+    if (!dentroDeUploads(absoluto)) {
+      throw new HttpException({ code: 'forbidden', message: 'Ruta de archivo no permitida.' }, HttpStatus.FORBIDDEN);
+    }
+    await writeFile(absoluto, archivo.buffer);
+
     const adjunto = await this.prisma.adjunto.create({
       data: {
         ticketId,
         nombre: archivo.originalname.replace(/[^\w.\- ]/g, '_').slice(0, 120),
-        ruta,
+        ruta: rutaRelativa,
         mime: archivo.mimetype || 'application/octet-stream',
         tamano: archivo.size,
         subidoPorId: actor.id,
       },
       select: { id: true, nombre: true, tamano: true, mime: true, subidoPorId: true },
     });
+
+    let mensajePayload: {
+      id: string;
+      canal: string;
+      autorTipo: string;
+      autor: string;
+      contenido: string;
+      fecha: Date;
+      ticketId: string;
+      adjuntoId: string | null;
+      adjunto: { id: string; nombre: string; mime: string; tamano: number } | null;
+    } | null = null;
+
+    if (esEquipo && respuesta) {
+      const mensaje = await this.prisma.mensaje.create({
+        data: {
+          ticketId,
+          autorTipo: 'TECNICO',
+          autorId: actor.id,
+          canal: 'WEB',
+          contenido: respuesta,
+          adjuntoId: adjunto.id,
+          estadoEntrega: 'ENTREGADO',
+        },
+        include: { autor: { select: { nombre: true } } },
+      });
+      mensajePayload = {
+        id: mensaje.id,
+        canal: mensaje.canal,
+        autorTipo: mensaje.autorTipo,
+        autor: mensaje.autor?.nombre ?? 'Usuario',
+        contenido: mensaje.contenido,
+        fecha: mensaje.fecha,
+        ticketId,
+        adjuntoId: adjunto.id,
+        adjunto: {
+          id: adjunto.id,
+          nombre: adjunto.nombre,
+          mime: adjunto.mime ?? 'application/octet-stream',
+          tamano: adjunto.tamano,
+        },
+      };
+      this.tiempo.emitirTicket(ticketId, 'ticket:mensaje', mensajePayload);
+    }
+
     this.tiempo.emitirTicket(ticketId, 'ticket:adjunto', { ...adjunto, ticketId, accion: 'agregado' });
-    return adjunto;
+    return mensajePayload ? { ...adjunto, mensaje: mensajePayload } : adjunto;
   }
 
   async descargar(actor: Principal, ticketId: string, adjuntoId: string, inline = false) {
@@ -378,10 +521,16 @@ export class TicketsService {
     if (!adjunto) {
       throw new HttpException({ code: 'not_found', message: 'No se encontró el archivo.' }, HttpStatus.NOT_FOUND);
     }
-    const raiz = resolve(process.env.UPLOAD_DIR ?? './uploads');
-    const absoluto = resolve(adjunto.ruta);
-    if (!absoluto.startsWith(raiz)) {
-      throw new HttpException({ code: 'forbidden', message: 'No tienes permiso para esta acción.' }, HttpStatus.FORBIDDEN);
+    const absoluto = resolverArchivo(adjunto.ruta, ticketId);
+    if (!absoluto) {
+      throw new HttpException(
+        {
+          code: 'not_found',
+          message:
+            'La evidencia está registrada, pero el archivo ya no está en el servidor (suele pasar tras un despliegue sin volumen). Pide al solicitante que la vuelva a subir.',
+        },
+        HttpStatus.NOT_FOUND,
+      );
     }
     const modo = inline ? 'inline' : 'attachment';
     return new StreamableFile(createReadStream(absoluto), {
@@ -401,11 +550,11 @@ export class TicketsService {
     if (!esDueno && !esEquipo) {
       throw new HttpException({ code: 'forbidden', message: 'No puedes eliminar esta evidencia.' }, HttpStatus.FORBIDDEN);
     }
-    const raiz = resolve(process.env.UPLOAD_DIR ?? './uploads');
-    const absoluto = resolve(adjunto.ruta);
-    if (absoluto.startsWith(raiz)) {
+    const absoluto = resolverArchivo(adjunto.ruta, ticketId);
+    if (absoluto) {
       await unlink(absoluto).catch(() => undefined);
     }
+    await this.prisma.mensaje.updateMany({ where: { adjuntoId: adjunto.id }, data: { adjuntoId: null } });
     await this.prisma.adjunto.delete({ where: { id: adjunto.id } });
     this.tiempo.emitirTicket(ticketId, 'ticket:adjunto', { id: adjunto.id, ticketId, accion: 'eliminado' });
     return { ok: true, id: adjunto.id };
