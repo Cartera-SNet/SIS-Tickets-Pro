@@ -1,26 +1,31 @@
-import { Button, Form, Select } from 'antd';
-import { useEffect, useState } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { Button, Input, Select } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useOutletContext } from 'react-router-dom';
 import { ErrorHttp, type Sesion, api } from '../api/http';
+import { ETIQUETA_ESTADO, claseEstado, claseNivel, etiquetaEstado } from '../ui/etiquetas';
 
 type Ticket = {
   id: string;
   numero: string;
   titulo: string;
+  estado: string;
   estadoNombre?: string;
   nivel: string;
   canal: string;
   categoria: string;
+  responsableNombre?: string | null;
   fechaObjetivoSolucion: string | null;
 };
 
 export function TicketsPage() {
   const sesion = useOutletContext<Sesion | null>();
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [aviso, setAviso] = useState('');
   const [estado, setEstado] = useState<string>();
   const [nivel, setNivel] = useState<string>();
   const [canal, setCanal] = useState<string>();
+  const [busqueda, setBusqueda] = useState('');
 
   function cargar(filtros: { estado?: string; nivel?: string; canal?: string } = {}) {
     const params = new URLSearchParams();
@@ -30,35 +35,60 @@ export function TicketsPage() {
     const consulta = params.toString();
     api<{ items: Ticket[] }>(`/api/tickets${consulta ? `?${consulta}` : ''}`)
       .then((cuerpo) => setTickets(cuerpo.items))
-      .catch((error: unknown) => setAviso(error instanceof ErrorHttp ? error.message : 'No se pudieron cargar los casos.'));
+      .catch((error: unknown) =>
+        setAviso(error instanceof ErrorHttp ? error.message : 'No se pudieron cargar los casos.'),
+      );
   }
 
   useEffect(() => {
     cargar();
   }, []);
 
+  const visibles = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    if (!q) return tickets;
+    return tickets.filter(
+      (ticket) =>
+        ticket.numero.toLowerCase().includes(q) ||
+        ticket.titulo.toLowerCase().includes(q) ||
+        (ticket.categoria ?? '').toLowerCase().includes(q),
+    );
+  }, [tickets, busqueda]);
+
+  const abiertos = tickets.filter((ticket) => !['CERRADO', 'CERRADO_CON_ACTA', 'CERRADO_SIN_FIRMA', 'DESCARTADO', 'CANCELADO'].includes(ticket.estado)).length;
+
   return (
     <section>
-      <h1>Tickets</h1>
-      <p>
-        Ves solo los casos que te autoriza tu rol{sesion ? `, ${sesion.nombre}` : ''}.{' '}
-        <Link to="/tickets/nuevo">Reportar un caso</Link>
-      </p>
-      <Form
-        layout="inline"
-        style={{ marginBottom: 16 }}
-        onFinish={() => cargar({ estado, nivel, canal })}
-      >
+      <div className="pagina-cabecera">
+        <div>
+          <h1>Bandeja de tickets</h1>
+          <p>
+            {abiertos} abiertos · filtrada según tus permisos
+            {sesion ? ` · ${sesion.nombre}` : ''}
+          </p>
+        </div>
+        {sesion?.permisos.includes('tickets.crear') && (
+          <Button type="primary" onClick={() => navigate('/tickets/nuevo')}>
+            + Nuevo ticket
+          </Button>
+        )}
+      </div>
+
+      <div className="filtros-fila">
+        <Input
+          allowClear
+          placeholder="Buscar por número, asunto o categoría…"
+          style={{ minWidth: 240, flex: 1 }}
+          value={busqueda}
+          onChange={(evento) => setBusqueda(evento.target.value)}
+        />
         <Select
           allowClear
           placeholder="Estado"
           style={{ width: 180 }}
           value={estado}
           onChange={setEstado}
-          options={['NUEVO', 'EN_ATENCION_N1', 'RESUELTO', 'DESCARTADO', 'CERRADO', 'REABIERTO'].map((value) => ({
-            value,
-            label: value,
-          }))}
+          options={Object.entries(ETIQUETA_ESTADO).map(([value, label]) => ({ value, label }))}
         />
         <Select
           allowClear
@@ -71,7 +101,7 @@ export function TicketsPage() {
         <Select
           allowClear
           placeholder="Canal"
-          style={{ width: 120 }}
+          style={{ width: 130 }}
           value={canal}
           onChange={setCanal}
           options={[
@@ -79,23 +109,55 @@ export function TicketsPage() {
             { value: 'WHATSAPP', label: 'WhatsApp' },
           ]}
         />
-        <Button htmlType="submit">Filtrar</Button>
-      </Form>
+        <Button type="primary" onClick={() => cargar({ estado, nivel, canal })}>
+          Filtrar
+        </Button>
+      </div>
+
       {aviso && <p className="aviso-db">{aviso}</p>}
-      {!aviso && tickets.length === 0 && <p>No tienes casos.</p>}
-      <ul>
-        {tickets.map((ticket) => (
-          <li key={ticket.id}>
-            <Link to={`/tickets/${ticket.id}`}>
-              {ticket.numero} · {ticket.titulo} · {ticket.estadoNombre} · {ticket.nivel} · {ticket.canal}
-              {ticket.categoria ? ` · ${ticket.categoria}` : ''}
-            </Link>
-            {ticket.fechaObjetivoSolucion && (
-              <span> · vence {new Date(ticket.fechaObjetivoSolucion).toLocaleString('es-CO')}</span>
-            )}
-          </li>
-        ))}
-      </ul>
+
+      <article className="tabla-caja">
+        {!aviso && visibles.length === 0 && <p>No tienes casos con estos filtros.</p>}
+        {visibles.length > 0 && (
+          <table className="tabla-sis">
+            <thead>
+              <tr>
+                <th>Ticket</th>
+                <th>Asunto</th>
+                <th>Categoría</th>
+                <th>Nivel</th>
+                <th>Canal</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibles.map((ticket) => (
+                <tr key={ticket.id}>
+                  <td>
+                    <Link to={`/tickets/${ticket.id}`}>{ticket.numero}</Link>
+                  </td>
+                  <td>{ticket.titulo}</td>
+                  <td>{ticket.categoria || '—'}</td>
+                  <td>
+                    <span className={claseNivel(ticket.nivel)}>{ticket.nivel}</span>
+                  </td>
+                  <td>{ticket.canal === 'WHATSAPP' ? 'WhatsApp' : 'Web'}</td>
+                  <td>
+                    <span className={claseEstado(ticket.estado)}>
+                      {etiquetaEstado(ticket.estado, ticket.estadoNombre)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {visibles.length > 0 && (
+          <p style={{ margin: '12px 0 0', fontSize: '0.85rem' }}>
+            Mostrando {visibles.length} de {tickets.length}
+          </p>
+        )}
+      </article>
     </section>
   );
 }

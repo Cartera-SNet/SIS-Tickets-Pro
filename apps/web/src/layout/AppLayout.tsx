@@ -106,7 +106,12 @@ export function AppLayout() {
             <span>{enVivo ? 'En vivo' : 'Sin conexión'}</span>
           </div>
           <Badge count={0} showZero>
-            <BellOutlined style={{ fontSize: 18 }} />
+            <Button
+              type="text"
+              aria-label="Notificaciones"
+              icon={<BellOutlined style={{ fontSize: 18 }} />}
+              onClick={() => navigate('/notificaciones')}
+            />
           </Badge>
           <Avatar style={{ background: '#14a3a3' }}>{iniciales}</Avatar>
           <div className="quien">

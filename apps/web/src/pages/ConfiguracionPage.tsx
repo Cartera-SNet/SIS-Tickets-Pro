@@ -5,6 +5,14 @@ import { ErrorHttp, type Sesion, api } from '../api/http';
 
 type Fallo = { id: string; nombre: string; reintentos: number; fecha: string };
 
+const ENLACES = [
+  { to: '/configuracion/catalogos', titulo: 'Catálogos y tiempos', nota: 'Categorías, sedes, tipos de personal y ANS.' },
+  { to: '/configuracion/usuarios', titulo: 'Usuarios y roles', nota: 'Vincula Esculapio, correo y WhatsApp.' },
+  { to: '/configuracion/matriz', titulo: 'Matriz de avisos', nota: 'Qué evento notifica y por qué canal.' },
+  { to: '/configuracion/agente', titulo: 'Agente IA', nota: 'Confianza, intentos guiados y privacidad.' },
+  { to: '/configuracion/plantillas', titulo: 'Plantillas de WhatsApp', nota: 'Estado de aprobación en Meta.' },
+];
+
 export function ConfiguracionPage() {
   const sesion = useOutletContext<Sesion | null>();
   const [fallidos, setFallidos] = useState<Fallo[]>([]);
@@ -31,34 +39,49 @@ export function ConfiguracionPage() {
 
   return (
     <section>
-      <h1>Configuración</h1>
-      <p>
-        <Link to="/configuracion/catalogos">Catálogos y tiempos</Link>
-        {' · '}
-        <Link to="/configuracion/usuarios">Usuarios y roles</Link>
-        {' · '}
-        <Link to="/configuracion/matriz">Matriz de avisos</Link>
-        {' · '}
-        <Link to="/configuracion/agente">Agente IA</Link>
-        {' · '}
-        <Link to="/configuracion/plantillas">Plantillas de WhatsApp</Link>
-      </p>
-      {!puede && <p>El resto de parámetros llega en los sprints de administración.</p>}
+      <div className="pagina-cabecera">
+        <div>
+          <h1>Configuración</h1>
+          <p>Administración de catálogos, usuarios, avisos y el agente.</p>
+        </div>
+      </div>
+
+      <div className="config-rejilla">
+        {ENLACES.map((enlace) => (
+          <Link key={enlace.to} className="enlace-config" to={enlace.to}>
+            <strong>{enlace.titulo}</strong>
+            <small>{enlace.nota}</small>
+          </Link>
+        ))}
+      </div>
+
+      {!puede && <p>El resto de parámetros queda para quien tenga permiso de configuración.</p>}
       {puede && (
-        <>
+        <article className="panel-tarjeta">
           <h2>Cola de trabajos fallidos</h2>
           <p>WhatsApp, correo, recordatorios y órdenes se reintentan con espera creciente.</p>
           {aviso && <p className="aviso-db">{aviso}</p>}
-          <Button onClick={ensayar}>Encolar un fallo de prueba</Button>
-          <ul>
-            {fallidos.map((fallo) => (
-              <li key={fallo.id}>
-                {fallo.nombre} · {fallo.reintentos} reintentos
-              </li>
-            ))}
-          </ul>
+          <Button onClick={() => void ensayar()} style={{ marginBottom: 12 }}>
+            Encolar un fallo de prueba
+          </Button>
+          <table className="tabla-sis">
+            <thead>
+              <tr>
+                <th>Trabajo</th>
+                <th>Reintentos</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fallidos.map((fallo) => (
+                <tr key={fallo.id}>
+                  <td>{fallo.nombre}</td>
+                  <td>{fallo.reintentos}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           {fallidos.length === 0 && !aviso && <p>No hay trabajos fallidos.</p>}
-        </>
+        </article>
       )}
     </section>
   );

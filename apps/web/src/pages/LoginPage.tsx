@@ -81,67 +81,101 @@ export function LoginPage() {
   }
 
   return (
-    <main className="login-panel">
-      <div className="marca">
-        <div className="marca-s" aria-hidden="true">
-          S
+    <main className="login-hero">
+      <section className="login-copy">
+        <div className="marca" style={{ padding: 0 }}>
+          <div className="marca-s" aria-hidden="true">
+            S
+          </div>
+          <div>
+            <strong>SIS</strong>
+            <small>MESA DE AYUDA TI</small>
+          </div>
         </div>
-        <div>
-          <strong>SIS</strong>
-          <small>MESA DE AYUDA TI</small>
+        <h1>Soporte de hardware, redes y aplicaciones básicas</h1>
+        <p>
+          Reporta fallas de tu equipo, impresora, conexión o programas de oficina. También puedes escribirnos por
+          WhatsApp y nuestro asistente te atiende de inmediato.
+        </p>
+        <div className="login-pills" aria-label="Alcance">
+          <span>Hardware</span>
+          <span>Redes</span>
+          <span>Aplicaciones básicas</span>
         </div>
-      </div>
-      <h1>Ingreso</h1>
-      <p>Entra con tu usuario de Esculapio o con Gmail si no tienes uno.</p>
-      {aviso && <p className="aviso-db">{aviso}</p>}
-      {usuarios.length > 0 && (
-        <section>
-          <h2>Usuarios de prueba</h2>
-          <Select
-            style={{ width: '100%', marginBottom: 12 }}
-            placeholder="Elige un usuario"
-            options={usuarios.map((usuario) => ({ value: usuario.id, label: `${usuario.nombre} · ${usuario.rol}` }))}
-            value={usuarioDev}
-            onChange={setUsuarioDev}
-          />
-          <Button type="primary" onClick={entrarDev} block>
-            Entrar como usuario de prueba
-          </Button>
-        </section>
-      )}
-      {empresas.length === 0 ? (
-        <Form layout="vertical" onFinish={conectar} style={{ marginTop: 24 }}>
-          <Form.Item name="servidor" label="Servidor" rules={[{ required: true, message: 'Elige el servidor' }]}>
-            <Select options={servidores.map((servidor) => ({ value: servidor.descripcion, label: servidor.descripcion }))} />
-          </Form.Item>
-          <Form.Item name="usuario" label="Usuario" rules={[{ required: true, message: 'Escribe el usuario' }]}>
-            <Input autoComplete="username" />
-          </Form.Item>
-          <Form.Item name="password" label="Contraseña" rules={[{ required: true, message: 'Escribe la contraseña' }]}>
-            <Input.Password autoComplete="current-password" />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" block>
-            Continuar
-          </Button>
-        </Form>
-      ) : (
-        <Form layout="vertical" onFinish={(valores: { empresa: string }) => elegirEmpresa(valores.empresa)}>
-          <Form.Item name="empresa" label="Empresa y sede" rules={[{ required: true, message: 'Elige la empresa' }]}>
+      </section>
+
+      <section className="login-card">
+        <h1>Ingresar</h1>
+        <p>Usa Esculapio o tu correo. Después se validan empresa y sede.</p>
+        {aviso && <p className="aviso-db">{aviso}</p>}
+
+        {usuarios.length > 0 && (
+          <section style={{ marginBottom: 20 }}>
+            <h2 style={{ fontSize: '0.95rem' }}>Usuarios de prueba</h2>
             <Select
-              options={empresas.map((empresa) => ({
-                value: empresa.cod,
-                label: `${empresa.nombre} · ${empresa.sede}`,
+              style={{ width: '100%', marginBottom: 12 }}
+              placeholder="Elige un usuario"
+              options={usuarios.map((usuario) => ({
+                value: usuario.id,
+                label: `${usuario.nombre} · ${usuario.rol}`,
               }))}
+              value={usuarioDev}
+              onChange={setUsuarioDev}
             />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" block>
-            Entrar
-          </Button>
-        </Form>
-      )}
-      <Button style={{ marginTop: 16 }} onClick={gmail} block>
-        Continuar con Gmail
-      </Button>
+            <Button type="primary" onClick={entrarDev} block>
+              Entrar como usuario de prueba
+            </Button>
+          </section>
+        )}
+
+        {empresas.length === 0 ? (
+          <Form layout="vertical" onFinish={conectar}>
+            <Form.Item name="servidor" label="Servidor" rules={[{ required: true, message: 'Elige el servidor' }]}>
+              <Select
+                options={servidores.map((servidor) => ({
+                  value: servidor.descripcion,
+                  label: servidor.descripcion,
+                }))}
+              />
+            </Form.Item>
+            <Form.Item name="usuario" label="Usuario" rules={[{ required: true, message: 'Escribe el usuario' }]}>
+              <Input autoComplete="username" />
+            </Form.Item>
+            <Form.Item
+              name="password"
+              label="Contraseña"
+              rules={[{ required: true, message: 'Escribe la contraseña' }]}
+            >
+              <Input.Password autoComplete="current-password" />
+            </Form.Item>
+            <Button type="primary" htmlType="submit" block>
+              Continuar con Esculapio
+            </Button>
+          </Form>
+        ) : (
+          <Form layout="vertical" onFinish={(valores: { empresa: string }) => elegirEmpresa(valores.empresa)}>
+            <Form.Item name="empresa" label="Empresa y sede" rules={[{ required: true, message: 'Elige la empresa' }]}>
+              <Select
+                options={empresas.map((empresa) => ({
+                  value: empresa.cod,
+                  label: `${empresa.nombre} · ${empresa.sede}`,
+                }))}
+              />
+            </Form.Item>
+            <Button type="primary" htmlType="submit" block>
+              Entrar al sistema
+            </Button>
+          </Form>
+        )}
+
+        <Button style={{ marginTop: 12 }} onClick={gmail} block>
+          Continuar con Gmail
+        </Button>
+
+        <p className="login-pie">
+          ¿No tienes correo corporativo? Reporta por WhatsApp o comunícate con la mesa de ayuda.
+        </p>
+      </section>
     </main>
   );
 }

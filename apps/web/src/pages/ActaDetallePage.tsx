@@ -42,11 +42,17 @@ export function ActaDetallePage() {
       contexto.lineTo(p.x, p.y);
       contexto.stroke();
     };
+    const soltar = () => {
+      activo = false;
+    };
     canvas.addEventListener('pointerdown', empezar);
     canvas.addEventListener('pointermove', mover);
-    canvas.addEventListener('pointerup', () => {
-      activo = false;
-    });
+    canvas.addEventListener('pointerup', soltar);
+    return () => {
+      canvas.removeEventListener('pointerdown', empezar);
+      canvas.removeEventListener('pointermove', mover);
+      canvas.removeEventListener('pointerup', soltar);
+    };
   }, []);
 
   function imagen() {
@@ -63,85 +69,111 @@ export function ActaDetallePage() {
 
   return (
     <section>
-      <h1>Firma en el dispositivo</h1>
-      <p>El técnico firma primero con su sesión. El solicitante digita el código de 6 dígitos, que vence en 5 minutos. Sin código no se firma. No es una firma digital certificada y no se reutiliza una firma guardada.</p>
-      <p>
+      <div className="pagina-cabecera">
+        <div>
+          <h1>Firma presencial del acta</h1>
+          <p>Opción A: el técnico firma primero; el solicitante confirma con el código de WhatsApp (5 min).</p>
+        </div>
         <Link to="/actas">Volver a las actas</Link>
-      </p>
+      </div>
+
       {aviso && <p className="aviso-db">{aviso}</p>}
-      <canvas ref={lienzo} width={360} height={120} style={{ border: '1px solid #1e3040', background: '#fff', touchAction: 'none' }} />
-      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-        <Button
-          type="primary"
-          onClick={() =>
-            ejecutar(async () => {
-              await api(`/api/actas/${id}/firma-tecnico`, { method: 'POST', body: { imagen: imagen() } });
-              setAviso('Firmaste como técnico. Ahora pide el código o crea el enlace.');
-            })
-          }
-        >
-          Firmar como técnico
-        </Button>
-        <Button
-          onClick={() =>
-            ejecutar(async () => {
-              const cuerpo = await api<{ codigoPrueba?: string }>(`/api/actas/${id}/codigo`, { method: 'POST' });
-              setAviso(cuerpo.codigoPrueba ? `Código de prueba: ${cuerpo.codigoPrueba}` : 'Código enviado.');
-            })
-          }
-        >
-          Pedir código
-        </Button>
-        <Button
-          onClick={() =>
-            ejecutar(async () => {
-              const cuerpo = await api<{ url: string }>(`/api/actas/${id}/enlace`, { method: 'POST' });
-              setEnlace(cuerpo.url);
-              setAviso('Enlace de un solo uso, vence en 48 horas.');
-            })
-          }
-        >
-          Crear enlace
-        </Button>
+
+      <div className="detalle-dos">
+        <article className="panel-tarjeta">
+          <h2>Paso 1 · técnico</h2>
+          <p>Firma con tu sesión. Sin esta firma no se pasa al solicitante.</p>
+          <canvas ref={lienzo} className="firma-lienzo" width={420} height={140} aria-label="Lienzo de firma" />
+          <div className="filtros-fila" style={{ marginTop: 12 }}>
+            <Button
+              type="primary"
+              onClick={() =>
+                void ejecutar(async () => {
+                  await api(`/api/actas/${id}/firma-tecnico`, { method: 'POST', body: { imagen: imagen() } });
+                  setAviso('Firmaste como técnico. Ahora pide el código o crea el enlace.');
+                })
+              }
+            >
+              Firmar como técnico
+            </Button>
+            <Button
+              onClick={() =>
+                void ejecutar(async () => {
+                  const cuerpo = await api<{ codigoPrueba?: string }>(`/api/actas/${id}/codigo`, { method: 'POST' });
+                  setAviso(cuerpo.codigoPrueba ? `Código de prueba: ${cuerpo.codigoPrueba}` : 'Código enviado.');
+                })
+              }
+            >
+              Pedir código WhatsApp
+            </Button>
+            <Button
+              onClick={() =>
+                void ejecutar(async () => {
+                  const cuerpo = await api<{ url: string }>(`/api/actas/${id}/enlace`, { method: 'POST' });
+                  setEnlace(cuerpo.url);
+                  setAviso('Enlace de un solo uso, vence en 48 horas.');
+                })
+              }
+            >
+              Crear enlace (opción B)
+            </Button>
+          </div>
+        </article>
+
+        <article className="panel-tarjeta">
+          <h2>Paso 2 · solicitante</h2>
+          <p>En el mismo dispositivo. El código prueba la identidad; la traza sola no basta.</p>
+          <Input
+            style={{ maxWidth: 220, marginBottom: 12 }}
+            value={codigo}
+            onChange={(evento) => setCodigo(evento.target.value)}
+            placeholder="Código de 6 dígitos"
+            maxLength={6}
+          />
+          <Input.TextArea
+            value={motivo}
+            onChange={(evento) => setMotivo(evento.target.value)}
+            placeholder="Observaciones o motivo si no quedó resuelto"
+            rows={3}
+            style={{ marginBottom: 12 }}
+          />
+          <div className="filtros-fila">
+            <Button
+              type="primary"
+              onClick={() =>
+                void ejecutar(async () => {
+                  const cuerpo = await api<{ codigo: string }>(`/api/actas/${id}/firma-solicitante`, {
+                    method: 'POST',
+                    body: { codigo, imagen: imagen() },
+                  });
+                  setAviso(`Acta cerrada. Código ${cuerpo.codigo}.`);
+                })
+              }
+            >
+              Firmar y cerrar
+            </Button>
+            <Button
+              danger
+              onClick={() =>
+                void ejecutar(async () => {
+                  await api(`/api/actas/${id}/rechazar`, { method: 'POST', body: { codigo, motivo } });
+                  setAviso('Firma rechazada. El caso volvió al técnico.');
+                })
+              }
+            >
+              No quedó resuelto
+            </Button>
+          </div>
+          {enlace && (
+            <p style={{ marginTop: 12 }}>
+              Enlace: <a href={enlace}>{enlace}</a>
+            </p>
+          )}
+          <p style={{ marginTop: 12 }}>
+            <a href={`/api/actas/${id}/pdf`}>Descargar PDF</a>
+          </p>
+        </article>
       </div>
-      <Input style={{ marginTop: 12, maxWidth: 220 }} value={codigo} onChange={(evento) => setCodigo(evento.target.value)} placeholder="Código de 6 dígitos" />
-      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        <Button
-          type="primary"
-          onClick={() =>
-            ejecutar(async () => {
-              const cuerpo = await api<{ codigo: string }>(`/api/actas/${id}/firma-solicitante`, {
-                method: 'POST',
-                body: { codigo, imagen: imagen() },
-              });
-              setAviso(`Acta cerrada. Código ${cuerpo.codigo}.`);
-            })
-          }
-        >
-          Firmar solicitante
-        </Button>
-      </div>
-      <Input.TextArea style={{ marginTop: 12 }} value={motivo} onChange={(evento) => setMotivo(evento.target.value)} placeholder="Motivo si no quedó resuelto" rows={2} />
-      <Button
-        danger
-        style={{ marginTop: 8 }}
-        onClick={() =>
-          ejecutar(async () => {
-            await api(`/api/actas/${id}/rechazar`, { method: 'POST', body: { codigo, motivo } });
-            setAviso('Firma rechazada. El caso volvió al técnico.');
-          })
-        }
-      >
-        Rechazar
-      </Button>
-      {enlace && (
-        <p>
-          <a href={enlace}>{enlace}</a>
-        </p>
-      )}
-      <p>
-        <a href={`/api/actas/${id}/pdf`}>Descargar PDF</a>
-      </p>
     </section>
   );
 }

@@ -56,7 +56,7 @@ export class PanelService {
       },
       orderBy: { fechaObjetivoSolucion: 'asc' },
       take: 8,
-      select: { numero: true, titulo: true, nivel: true, fechaObjetivoSolucion: true },
+      select: { id: true, numero: true, titulo: true, nivel: true, fechaObjetivoSolucion: true },
     });
     return {
       abiertos,

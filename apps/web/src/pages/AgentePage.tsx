@@ -71,8 +71,12 @@ export function AgentePage() {
 
   return (
     <section>
-      <h1>Conversación en curso · agente IA</h1>
-      <p>Vista del analista: el agente atiende y el equipo puede intervenir.</p>
+      <div className="pagina-cabecera">
+        <div>
+          <h1>Conversación en curso · agente IA</h1>
+          <p>Vista del analista: el agente atiende por WhatsApp y el equipo puede intervenir.</p>
+        </div>
+      </div>
       {aviso && <p className="aviso-db">{aviso}</p>}
       <div className="agente-elegir" aria-label="Conversaciones">
         {filas.map((fila) => (

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ErrorHttp, api } from '../api/http';
+import { claseNivel } from '../ui/etiquetas';
 
 type Resumen = {
   porNivel: { nivel: string; total: number }[];
@@ -24,32 +25,89 @@ export function ReportesPage() {
   }, []);
 
   if (!resumen) {
-    return <p>{aviso || 'Cargando reportes…'}</p>;
+    return (
+      <section>
+        <div className="pagina-cabecera">
+          <div>
+            <h1>Reportes de servicio</h1>
+            <p>{aviso || 'Cargando indicadores…'}</p>
+          </div>
+        </div>
+      </section>
+    );
   }
+
+  const maxNivel = Math.max(1, ...resumen.porNivel.map((fila) => fila.total));
 
   return (
     <section>
-      <h1>Reportes de servicio</h1>
-      <p>Sin exportación. Los números salen de los casos registrados.</p>
-      <ul>
-        {resumen.porNivel.map((fila) => (
-          <li key={fila.nivel}>
-            {fila.nivel}: {fila.total}
-          </li>
-        ))}
-      </ul>
-      <p>Satisfacción promedio: {Number(resumen.satisfaccion).toFixed(1)} ({resumen.calificaciones} calificaciones)</p>
-      <p>Horas promedio hasta resuelto: {resumen.promedioHoras}</p>
-      <p>
-        Cumplimiento de ANS: {resumen.cumplimientoAns}% ({resumen.casosConMeta} casos con meta)
-      </p>
-      <p>Atenciones del agente: {resumen.atencionesAgente}. Marcadas resueltas por IA: {resumen.resueltosPorIa}</p>
-      <h2>Equipos con más casos</h2>
-      <ul>
-        {resumen.equipos.map((equipo) => (
-          <li key={equipo.equipoId ?? 'sin'}>{equipo.total} casos</li>
-        ))}
-      </ul>
+      <div className="pagina-cabecera">
+        <div>
+          <h1>Reportes de servicio</h1>
+          <p>Resolución por IA, ANS, satisfacción y equipos con más incidencias. La exportación a Excel/PDF queda en reserva.</p>
+        </div>
+      </div>
+
+      <div className="kpis" style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}>
+        <article className="kpi morado">
+          <span>Resueltos por IA</span>
+          <strong>{resumen.resueltosPorIa}</strong>
+        </article>
+        <article className="kpi verde">
+          <span>Cumplimiento ANS</span>
+          <strong>{resumen.cumplimientoAns}%</strong>
+        </article>
+        <article className="kpi ambar">
+          <span>Satisfacción</span>
+          <strong>{Number(resumen.satisfaccion).toFixed(1)}</strong>
+        </article>
+        <article className="kpi azul">
+          <span>Horas promedio a resuelto</span>
+          <strong>{resumen.promedioHoras}</strong>
+        </article>
+      </div>
+
+      <div className="panel-rejilla">
+        <article className="panel-tarjeta">
+          <h2>Tickets por nivel</h2>
+          {resumen.porNivel.map((fila) => (
+            <div className="barra-cat" key={fila.nivel}>
+              <span className={claseNivel(fila.nivel)}>{fila.nivel}</span>
+              <div className="barra-pista" aria-hidden="true">
+                <div className="barra-lleno" style={{ width: `${(fila.total / maxNivel) * 100}%` }} />
+              </div>
+              <strong>{fila.total}</strong>
+            </div>
+          ))}
+          <p className="dona-nota">
+            Atenciones del agente: {resumen.atencionesAgente} · Casos con meta ANS: {resumen.casosConMeta} · Calificaciones:{' '}
+            {resumen.calificaciones}
+          </p>
+        </article>
+
+        <article className="panel-tarjeta">
+          <h2>Equipos con más casos</h2>
+          <table className="tabla-sis">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Equipo</th>
+                <th>Casos</th>
+              </tr>
+            </thead>
+            <tbody>
+              {resumen.equipos.map((equipo, indice) => (
+                <tr key={equipo.equipoId ?? `sin-${indice}`}>
+                  <td>{indice + 1}</td>
+                  <td>{equipo.equipoId ?? 'Sin equipo'}</td>
+                  <td>{equipo.total}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {resumen.equipos.length === 0 && <p>Sin datos de equipos.</p>}
+        </article>
+      </div>
     </section>
   );
 }

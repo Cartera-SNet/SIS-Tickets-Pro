@@ -79,24 +79,35 @@ export function NuevoTicketPage() {
 
   return (
     <section>
-      <h1>Nuevo ticket</h1>
-      <p>Cuéntanos qué pasa con el equipo, la red o un programa. No hace falta un artículo de ayuda para enviarlo.</p>
+      <div className="pagina-cabecera">
+        <div>
+          <h1>Nuevo ticket</h1>
+          <p>Cuéntanos qué pasa con el equipo, la red o un programa. Mira las sugerencias antes de enviar.</p>
+        </div>
+      </div>
       {aviso && <p className="aviso-db">{aviso}</p>}
       {sugerencias.length > 0 && (
-        <aside>
+        <aside className="panel-tarjeta" style={{ marginBottom: 14 }}>
           <h2>Antes de enviar, mira esto</h2>
           <ul>
             {sugerencias.map((articulo) => (
               <li key={articulo.id}>
-                <strong>{articulo.codigo} · {articulo.titulo}</strong>
+                <strong>
+                  {articulo.codigo} · {articulo.titulo}
+                </strong>
                 <p>{articulo.pasos}</p>
               </li>
             ))}
           </ul>
-          <p>Puedes enviar el caso aunque no te haya servido.</p>
+          <p>Puedes enviar el caso aunque no te haya servido. Las solicitudes de desarrollo de software se descartan y se redirigen.</p>
         </aside>
       )}
-      <Form layout="vertical" onFinish={enviar} initialValues={{ puedeTrabajar: true, personas: 1, areaCompleta: false }}>
+      <Form
+        className="panel-tarjeta"
+        layout="vertical"
+        onFinish={enviar}
+        initialValues={{ puedeTrabajar: true, personas: 1, areaCompleta: false }}
+      >
         <Form.Item name="titulo" label="Qué necesitas" rules={[{ required: true, min: 4, message: 'Describe el caso en una frase' }]}>
           <Input />
         </Form.Item>

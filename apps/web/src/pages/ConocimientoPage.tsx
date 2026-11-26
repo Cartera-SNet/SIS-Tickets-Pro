@@ -48,21 +48,56 @@ export function ConocimientoPage() {
 
   return (
     <section>
-      <h1>Base de conocimiento</h1>
-      <p>Un artículo solo se sugiere al usuario cuando un administrador lo publica.</p>
+      <div className="pagina-cabecera">
+        <div>
+          <h1>Base de conocimiento</h1>
+          <p>Solo los publicados los usa el agente N1. Un administrador aprueba el borrador.</p>
+        </div>
+      </div>
       {aviso && <p className="aviso-db">{aviso}</p>}
-      <ul>
-        {articulos.map((articulo) => (
-          <li key={articulo.id}>
-            {articulo.codigo} · {articulo.titulo} · {articulo.estado} · usos {articulo.usos ?? 0} · resueltos{' '}
-            {articulo.casosResueltos ?? 0} · reclasificaciones {articulo.reclasificaciones ?? 0}
-            {puedePublicar && articulo.estado === 'BORRADOR' && (
-              <Button onClick={() => publicar(articulo.id)}>Publicar</Button>
-            )}
-          </li>
-        ))}
-      </ul>
-      <Form layout="vertical" onFinish={crear} style={{ maxWidth: 520 }}>
+
+      <article className="tabla-caja" style={{ marginBottom: 16 }}>
+        <table className="tabla-sis">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Título</th>
+              <th>Categoría</th>
+              <th>Estado</th>
+              <th>Usos</th>
+              <th>Resueltos</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {articulos.map((articulo) => (
+              <tr key={articulo.id}>
+                <td>{articulo.codigo}</td>
+                <td>{articulo.titulo}</td>
+                <td>{articulo.categoria?.nombre ?? '—'}</td>
+                <td>
+                  <span className={articulo.estado === 'PUBLICADO' ? 'chip chip-ok' : 'chip chip-aviso'}>
+                    {articulo.estado === 'PUBLICADO' ? 'Publicado' : 'Borrador'}
+                  </span>
+                </td>
+                <td>{articulo.usos ?? 0}</td>
+                <td>{articulo.casosResueltos ?? 0}</td>
+                <td>
+                  {puedePublicar && articulo.estado === 'BORRADOR' && (
+                    <Button size="small" type="primary" onClick={() => void publicar(articulo.id)}>
+                      Publicar
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {articulos.length === 0 && <p>No hay artículos todavía.</p>}
+      </article>
+
+      <Form className="panel-tarjeta" layout="vertical" onFinish={crear} style={{ maxWidth: 560 }}>
+        <h2>Nuevo artículo</h2>
         <Form.Item name="titulo" label="Título" rules={[{ required: true, message: 'Escribe el título' }]}>
           <Input />
         </Form.Item>
