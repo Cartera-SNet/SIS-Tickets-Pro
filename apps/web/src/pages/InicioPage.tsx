@@ -1,5 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import {
+  CheckCircleOutlined,
+  FileProtectOutlined,
+  RobotOutlined,
+  ThunderboltOutlined,
+  ToolOutlined,
+} from '@ant-design/icons';
+import { Button } from 'antd';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { ErrorHttp, api } from '../api/http';
 import { conectarTiempoReal } from '../api/tiempo-real';
 import { claseAns, claseNivel, restanteAns } from '../ui/etiquetas';
@@ -30,7 +38,16 @@ const COLOR_NIVEL: Record<string, string> = {
   N3: '#e0413c',
 };
 
+type Kpi = {
+  clave: string;
+  etiqueta: string;
+  valor: string | number;
+  tono: string;
+  icono: ReactNode;
+};
+
 export function InicioPage() {
+  const navigate = useNavigate();
   const [panel, setPanel] = useState<Panel | null>(null);
   const [aviso, setAviso] = useState('');
 
@@ -77,11 +94,15 @@ export function InicioPage() {
   if (!panel) {
     return (
       <section>
-        <div className="pagina-cabecera">
+        <div className="hero-panel">
           <div>
-            <h1>Mesa de ayuda TI</h1>
-            <p>Tus casos están en Tickets.</p>
+            <p className="hero-eyebrow">SIS · Mesa de ayuda TI</p>
+            <h1>Panel principal</h1>
+            <p>Tus casos están en Tickets. El panel se completa con los indicadores de tu rol.</p>
           </div>
+          <Button type="primary" onClick={() => navigate('/tickets')}>
+            Ir a tickets
+          </Button>
         </div>
         {aviso && <p className="aviso-db">{aviso}</p>}
       </section>
@@ -92,41 +113,80 @@ export function InicioPage() {
     .map((parte) => `${parte.color} ${parte.inicio}% ${parte.inicio + parte.porcentaje}%`)
     .join(', ');
 
+  const kpis: Kpi[] = [
+    {
+      clave: 'abiertos',
+      etiqueta: 'Abiertos',
+      valor: panel.abiertos,
+      tono: 'teal',
+      icono: <ThunderboltOutlined />,
+    },
+    {
+      clave: 'ia',
+      etiqueta: 'Resueltos por IA hoy',
+      valor: panel.resueltosPorIaHoy,
+      tono: 'morado',
+      icono: <RobotOutlined />,
+    },
+    {
+      clave: 'escalados',
+      etiqueta: 'En N2 / N3',
+      valor: panel.enN2N3,
+      tono: 'ambar',
+      icono: <ToolOutlined />,
+    },
+    {
+      clave: 'actas',
+      etiqueta: 'Actas pendientes',
+      valor: panel.actasPendientes,
+      tono: 'azul',
+      icono: <FileProtectOutlined />,
+    },
+    {
+      clave: 'preventivos',
+      etiqueta: 'Preventivos del mes',
+      valor: `${panel.preventivos.porcentaje}%`,
+      tono: 'verde',
+      icono: <CheckCircleOutlined />,
+    },
+  ];
+
   return (
     <section>
-      <div className="pagina-cabecera">
+      <div className="hero-panel">
         <div>
-          <h1>Panel principal</h1>
-          <p>Indicadores en vivo de la mesa de ayuda.</p>
+          <p className="hero-eyebrow">SIS · Mesa de ayuda TI</p>
+          <h1>Diagnóstico operativo de la mesa</h1>
+          <p>Indicadores en vivo de tickets, agente IA, actas y mantenimiento preventivo.</p>
+        </div>
+        <div className="hero-acciones">
+          <Button type="primary" onClick={() => navigate('/tickets/nuevo')}>
+            Nuevo ticket
+          </Button>
+          <Button onClick={() => navigate('/reportes')}>Ver reportes</Button>
         </div>
       </div>
 
       <div className="kpis">
-        <article className="kpi">
-          <span>Abiertos</span>
-          <strong>{panel.abiertos}</strong>
-        </article>
-        <article className="kpi morado">
-          <span>Resueltos por IA hoy</span>
-          <strong>{panel.resueltosPorIaHoy}</strong>
-        </article>
-        <article className="kpi ambar">
-          <span>En N2 / N3</span>
-          <strong>{panel.enN2N3}</strong>
-        </article>
-        <article className="kpi azul">
-          <span>Actas pendientes de firma</span>
-          <strong>{panel.actasPendientes}</strong>
-        </article>
-        <article className="kpi verde">
-          <span>Preventivos del mes</span>
-          <strong>{panel.preventivos.porcentaje}%</strong>
-        </article>
+        {kpis.map((kpi) => (
+          <article className={`kpi kpi-icono ${kpi.tono}`} key={kpi.clave}>
+            <div className="kpi-cabeza">
+              <span className="kpi-icono-circulo" aria-hidden="true">
+                {kpi.icono}
+              </span>
+              <span>{kpi.etiqueta}</span>
+            </div>
+            <strong>{kpi.valor}</strong>
+          </article>
+        ))}
       </div>
 
       <div className="panel-rejilla">
         <article className="panel-tarjeta">
-          <h2>Tickets por categoría · 30 días</h2>
+          <div className="panel-titulo">
+            <h2>Tickets por categoría · 30 días</h2>
+            <span className="chip-suave">En vivo</span>
+          </div>
           {panel.porCategoria.length === 0 && <p>Sin datos en el periodo.</p>}
           {panel.porCategoria.map((fila) => (
             <div className="barra-cat" key={fila.categoria}>
@@ -140,7 +200,10 @@ export function InicioPage() {
         </article>
 
         <article className="panel-tarjeta">
-          <h2>Distribución por nivel</h2>
+          <div className="panel-titulo">
+            <h2>Distribución por nivel</h2>
+            <span className="chip-suave">SLA</span>
+          </div>
           <div className="dona-caja">
             <div
               className="dona-svg"
@@ -166,39 +229,52 @@ export function InicioPage() {
         </article>
       </div>
 
-      <article className="tabla-caja">
-        <h2>Próximos a vencer</h2>
-        {panel.proximos.length === 0 ? (
-          <p>No hay casos por vencer en las próximas 48 horas.</p>
-        ) : (
-          <table className="tabla-sis">
-            <thead>
-              <tr>
-                <th>Ticket</th>
-                <th>Asunto</th>
-                <th>Nivel</th>
-                <th>Vence en</th>
-              </tr>
-            </thead>
-            <tbody>
-              {panel.proximos.map((fila) => (
-                <tr key={fila.numero}>
-                  <td>
-                    {fila.id ? <Link to={`/tickets/${fila.id}`}>{fila.numero}</Link> : fila.numero}
-                  </td>
-                  <td>{fila.titulo}</td>
-                  <td>
-                    <span className={claseNivel(fila.nivel)}>{fila.nivel}</span>
-                  </td>
-                  <td className={claseAns(fila.fechaObjetivoSolucion)}>
-                    {restanteAns(fila.fechaObjetivoSolucion)}
-                  </td>
+      <div className="panel-rejilla panel-rejilla-baja">
+        <article className="tabla-caja">
+          <div className="panel-titulo">
+            <h2>Próximos a vencer</h2>
+            <Link to="/tickets">Ver bandeja</Link>
+          </div>
+          {panel.proximos.length === 0 ? (
+            <p>No hay casos por vencer en las próximas 48 horas.</p>
+          ) : (
+            <table className="tabla-sis">
+              <thead>
+                <tr>
+                  <th>Ticket</th>
+                  <th>Asunto</th>
+                  <th>Nivel</th>
+                  <th>Vence en</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </article>
+              </thead>
+              <tbody>
+                {panel.proximos.map((fila) => (
+                  <tr key={fila.numero}>
+                    <td>
+                      {fila.id ? <Link to={`/tickets/${fila.id}`}>{fila.numero}</Link> : fila.numero}
+                    </td>
+                    <td>{fila.titulo}</td>
+                    <td>
+                      <span className={claseNivel(fila.nivel)}>{fila.nivel}</span>
+                    </td>
+                    <td className={claseAns(fila.fechaObjetivoSolucion)}>
+                      {restanteAns(fila.fechaObjetivoSolucion)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </article>
+
+        <article className="panel-tarjeta panel-cta-ia">
+          <h2>Agente IA · WhatsApp</h2>
+          <p>El asistente atiende N1 y te avisa cuando necesita intervención humana.</p>
+          <Button type="primary" icon={<RobotOutlined />} onClick={() => navigate('/agente')}>
+            Abrir conversaciones
+          </Button>
+        </article>
+      </div>
     </section>
   );
 }

@@ -1,8 +1,15 @@
 import { Button, Input, Select } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useOutletContext } from 'react-router-dom';
+import { Link, useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { ErrorHttp, type Sesion, api } from '../api/http';
-import { ETIQUETA_ESTADO, claseEstado, claseNivel, etiquetaEstado } from '../ui/etiquetas';
+import {
+  ETIQUETA_ESTADO,
+  claseAns,
+  claseEstado,
+  claseNivel,
+  etiquetaEstado,
+  restanteAns,
+} from '../ui/etiquetas';
 
 type Ticket = {
   id: string;
@@ -17,23 +24,32 @@ type Ticket = {
   fechaObjetivoSolucion: string | null;
 };
 
+const CERRADOS = new Set([
+  'CERRADO',
+  'CERRADO_CON_ACTA',
+  'CERRADO_SIN_FIRMA',
+  'DESCARTADO',
+  'CANCELADO',
+]);
+
 export function TicketsPage() {
   const sesion = useOutletContext<Sesion | null>();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [aviso, setAviso] = useState('');
   const [estado, setEstado] = useState<string>();
   const [nivel, setNivel] = useState<string>();
   const [canal, setCanal] = useState<string>();
-  const [busqueda, setBusqueda] = useState('');
+  const [busqueda, setBusqueda] = useState(() => params.get('q') ?? '');
 
   function cargar(filtros: { estado?: string; nivel?: string; canal?: string } = {}) {
-    const params = new URLSearchParams();
-    if (filtros.estado) params.set('estado', filtros.estado);
-    if (filtros.nivel) params.set('nivel', filtros.nivel);
-    if (filtros.canal) params.set('canal', filtros.canal);
-    const consulta = params.toString();
-    api<{ items: Ticket[] }>(`/api/tickets${consulta ? `?${consulta}` : ''}`)
+    const consulta = new URLSearchParams();
+    if (filtros.estado) consulta.set('estado', filtros.estado);
+    if (filtros.nivel) consulta.set('nivel', filtros.nivel);
+    if (filtros.canal) consulta.set('canal', filtros.canal);
+    const qs = consulta.toString();
+    api<{ items: Ticket[] }>(`/api/tickets${qs ? `?${qs}` : ''}`)
       .then((cuerpo) => setTickets(cuerpo.items))
       .catch((error: unknown) =>
         setAviso(error instanceof ErrorHttp ? error.message : 'No se pudieron cargar los casos.'),
@@ -44,6 +60,13 @@ export function TicketsPage() {
     cargar();
   }, []);
 
+  useEffect(() => {
+    const q = params.get('q');
+    if (q !== null) {
+      setBusqueda(q);
+    }
+  }, [params]);
+
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
     if (!q) return tickets;
@@ -51,11 +74,13 @@ export function TicketsPage() {
       (ticket) =>
         ticket.numero.toLowerCase().includes(q) ||
         ticket.titulo.toLowerCase().includes(q) ||
-        (ticket.categoria ?? '').toLowerCase().includes(q),
+        (ticket.categoria ?? '').toLowerCase().includes(q) ||
+        (ticket.responsableNombre ?? '').toLowerCase().includes(q),
     );
   }, [tickets, busqueda]);
 
-  const abiertos = tickets.filter((ticket) => !['CERRADO', 'CERRADO_CON_ACTA', 'CERRADO_SIN_FIRMA', 'DESCARTADO', 'CANCELADO'].includes(ticket.estado)).length;
+  const abiertos = tickets.filter((ticket) => !CERRADOS.has(ticket.estado)).length;
+  const puedeCrear = sesion?.permisos.includes('tickets.crear');
 
   return (
     <section>
@@ -67,25 +92,25 @@ export function TicketsPage() {
             {sesion ? ` · ${sesion.nombre}` : ''}
           </p>
         </div>
-        {sesion?.permisos.includes('tickets.crear') && (
+        {puedeCrear && (
           <Button type="primary" onClick={() => navigate('/tickets/nuevo')}>
             + Nuevo ticket
           </Button>
         )}
       </div>
 
-      <div className="filtros-fila">
+      <div className="filtros-barra">
         <Input
           allowClear
-          placeholder="Buscar por número, asunto o categoría…"
-          style={{ minWidth: 240, flex: 1 }}
+          placeholder="Buscar por número, asunto, categoría o responsable…"
+          className="filtros-buscar"
           value={busqueda}
           onChange={(evento) => setBusqueda(evento.target.value)}
         />
         <Select
           allowClear
           placeholder="Estado"
-          style={{ width: 180 }}
+          style={{ width: 170 }}
           value={estado}
           onChange={setEstado}
           options={Object.entries(ETIQUETA_ESTADO).map(([value, label]) => ({ value, label }))}
@@ -117,45 +142,77 @@ export function TicketsPage() {
       {aviso && <p className="aviso-db">{aviso}</p>}
 
       <article className="tabla-caja">
-        {!aviso && visibles.length === 0 && <p>No tienes casos con estos filtros.</p>}
-        {visibles.length > 0 && (
-          <table className="tabla-sis">
-            <thead>
-              <tr>
-                <th>Ticket</th>
-                <th>Asunto</th>
-                <th>Categoría</th>
-                <th>Nivel</th>
-                <th>Canal</th>
-                <th>Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibles.map((ticket) => (
-                <tr key={ticket.id}>
-                  <td>
-                    <Link to={`/tickets/${ticket.id}`}>{ticket.numero}</Link>
-                  </td>
-                  <td>{ticket.titulo}</td>
-                  <td>{ticket.categoria || '—'}</td>
-                  <td>
-                    <span className={claseNivel(ticket.nivel)}>{ticket.nivel}</span>
-                  </td>
-                  <td>{ticket.canal === 'WHATSAPP' ? 'WhatsApp' : 'Web'}</td>
-                  <td>
-                    <span className={claseEstado(ticket.estado)}>
-                      {etiquetaEstado(ticket.estado, ticket.estadoNombre)}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {!aviso && visibles.length === 0 && (
+          <div className="vacio-caja">
+            <strong>No hay casos con estos filtros</strong>
+            <p>Prueba limpiar la búsqueda o crea un ticket nuevo.</p>
+            {puedeCrear && (
+              <Button type="primary" onClick={() => navigate('/tickets/nuevo')}>
+                + Nuevo ticket
+              </Button>
+            )}
+          </div>
         )}
         {visibles.length > 0 && (
-          <p style={{ margin: '12px 0 0', fontSize: '0.85rem' }}>
-            Mostrando {visibles.length} de {tickets.length}
-          </p>
+          <div className="tabla-scroll">
+            <table className="tabla-sis">
+              <thead>
+                <tr>
+                  <th>Ticket</th>
+                  <th>Asunto</th>
+                  <th>Categoría</th>
+                  <th>Nivel</th>
+                  <th>Canal</th>
+                  <th>Responsable</th>
+                  <th>ANS</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibles.map((ticket) => (
+                  <tr
+                    key={ticket.id}
+                    className="fila-click"
+                    onClick={() => navigate(`/tickets/${ticket.id}`)}
+                  >
+                    <td>
+                      <Link to={`/tickets/${ticket.id}`} onClick={(e) => e.stopPropagation()}>
+                        {ticket.numero}
+                      </Link>
+                    </td>
+                    <td>
+                      <span className="celda-asunto">{ticket.titulo}</span>
+                    </td>
+                    <td>{ticket.categoria || '—'}</td>
+                    <td>
+                      <span className={claseNivel(ticket.nivel)}>{ticket.nivel}</span>
+                    </td>
+                    <td>
+                      <span className={ticket.canal === 'WHATSAPP' ? 'chip chip-ok' : 'chip'}>
+                        {ticket.canal === 'WHATSAPP' ? 'WhatsApp' : 'Web'}
+                      </span>
+                    </td>
+                    <td>{ticket.responsableNombre || 'Sin asignar'}</td>
+                    <td className={claseAns(ticket.fechaObjetivoSolucion)}>
+                      {restanteAns(ticket.fechaObjetivoSolucion)}
+                    </td>
+                    <td>
+                      <span className={claseEstado(ticket.estado)}>
+                        {etiquetaEstado(ticket.estado, ticket.estadoNombre)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {visibles.length > 0 && (
+          <footer className="tabla-pie">
+            <span>
+              Mostrando {visibles.length} de {tickets.length}
+            </span>
+          </footer>
         )}
       </article>
     </section>

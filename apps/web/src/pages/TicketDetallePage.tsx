@@ -149,28 +149,28 @@ export function TicketDetallePage() {
           </h1>
           <p>
             {ticket.canal === 'WHATSAPP' ? 'Creado por WhatsApp' : 'Creado por la web'}
-            {ticket.fechaObjetivoSolucion
-              ? ` · ANS de solución: vence en ${restanteAns(ticket.fechaObjetivoSolucion)}`
+            {ticket.mensajes[0]
+              ? ` · ${new Date(ticket.mensajes[0].fecha).toLocaleString('es-CO')}`
               : ''}
           </p>
           <div className="detalle-chips">
-            <span className={claseNivel(ticket.nivel)}>{ticket.nivel}</span>
+            <span className={claseNivel(ticket.nivel)}>Nivel {ticket.nivel.replace('N', '')}</span>
             <span className={claseEstado(ticket.estado)}>{ticket.estadoNombre}</span>
             {ticket.prioridad && (
               <span className={prioridadAlta ? 'chip chip-peligro' : 'chip chip-info'}>
                 {ticket.prioridad.nombre}
               </span>
             )}
+            {ticket.fechaObjetivoSolucion && (
+              <span className={`chip ans-badge ${claseAns(ticket.fechaObjetivoSolucion)}`}>
+                ANS · vence en {restanteAns(ticket.fechaObjetivoSolucion)}
+              </span>
+            )}
           </div>
-          {ticket.fechaObjetivoSolucion && (
-            <p className={claseAns(ticket.fechaObjetivoSolucion)}>
-              {ticket.porVencer ? 'Este caso está por vencer.' : `Objetivo: ${new Date(ticket.fechaObjetivoSolucion).toLocaleString('es-CO')}`}
-            </p>
-          )}
         </div>
         <div className="detalle-acciones">
           {sesion?.permisos.includes('tickets.escalar') && (
-            <Button onClick={() => setPestana('info')}>Escalar</Button>
+            <Button onClick={() => setPestana('info')}>Escalar a N3</Button>
           )}
           {sesion?.permisos.includes('tickets.resolver') && ticket.estado !== 'RESUELTO' && (
             <Button type="primary" onClick={() => void marcarResuelto()}>
@@ -230,6 +230,12 @@ export function TicketDetallePage() {
               <span>{ticket.responsable?.nombre ?? 'Sin asignar'}</span>
             </div>
             <div className="dato-fila">
+              <span>Canal de origen</span>
+              <span>
+                {ticket.canal === 'WHATSAPP' ? 'WhatsApp · agente IA' : 'Web'}
+              </span>
+            </div>
+            <div className="dato-fila">
               <span>Descripción</span>
               <span>{ticket.descripcion}</span>
             </div>
@@ -244,23 +250,35 @@ export function TicketDetallePage() {
           <article className="panel-tarjeta">
             <h2>Conversación en vivo</h2>
             <div className="hilo-vivo">
-              {ticket.mensajes.slice(-6).map((mensaje) => (
-                <div className="hilo-msg" key={mensaje.id}>
-                  <header>
-                    <strong>
-                      {mensaje.autorTipo === 'AGENTE_IA' ? (
-                        <span className="chip chip-ia">Agente IA</span>
-                      ) : (
-                        mensaje.autor
-                      )}
-                    </strong>
-                    <time>{new Date(mensaje.fecha).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}</time>
-                  </header>
-                  <div>{mensaje.contenido}</div>
-                </div>
-              ))}
+              {ticket.mensajes.slice(-6).map((mensaje) => {
+                const propio =
+                  mensaje.autorTipo === 'TECNICO' ||
+                  mensaje.autorTipo === 'AGENTE_IA' ||
+                  mensaje.autorTipo === 'SISTEMA';
+                return (
+                  <div className={`hilo-msg ${propio ? 'salida' : 'entrada'}`} key={mensaje.id}>
+                    <header>
+                      <strong>
+                        {mensaje.autorTipo === 'AGENTE_IA' ? (
+                          <span className="chip chip-ia">Agente IA</span>
+                        ) : (
+                          mensaje.autor
+                        )}
+                        {mensaje.canal === 'WHATSAPP' ? ' · WhatsApp' : ''}
+                      </strong>
+                      <time>
+                        {new Date(mensaje.fecha).toLocaleTimeString('es-CO', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </time>
+                    </header>
+                    <div>{mensaje.contenido}</div>
+                  </div>
+                );
+              })}
               {ticket.mensajes.length === 0 && <p>Sin mensajes todavía.</p>}
-              {escribiendo && <p>Alguien está escribiendo…</p>}
+              {escribiendo && <p className="hilo-escribiendo">Alguien está escribiendo…</p>}
             </div>
             <div className="hilo-composer">
               <Input.TextArea
@@ -270,9 +288,9 @@ export function TicketDetallePage() {
                   socketRef.current?.emit('escribiendo', id);
                 }}
                 rows={2}
-                placeholder="Escribe un mensaje…"
+                placeholder="Escribe un mensaje (se envía también al WhatsApp del solicitante)…"
               />
-              <Button type="primary" onClick={enviarMensaje} disabled={!texto.trim()}>
+              <Button type="primary" onClick={() => void enviarMensaje()} disabled={!texto.trim()}>
                 Enviar
               </Button>
             </div>
@@ -341,19 +359,30 @@ export function TicketDetallePage() {
       {pestana === 'hilo' && (
         <article className="panel-tarjeta">
           <div className="hilo-vivo" style={{ maxHeight: 560 }}>
-            {ticket.mensajes.map((mensaje) => (
-              <div className="hilo-msg" key={mensaje.id}>
-                <header>
-                  <strong>
-                    {mensaje.canal} · {mensaje.autor} ({mensaje.autorTipo})
-                  </strong>
-                  <time>{new Date(mensaje.fecha).toLocaleString('es-CO')}</time>
-                </header>
-                <div>{mensaje.contenido}</div>
-              </div>
-            ))}
+            {ticket.mensajes.map((mensaje) => {
+              const propio =
+                mensaje.autorTipo === 'TECNICO' ||
+                mensaje.autorTipo === 'AGENTE_IA' ||
+                mensaje.autorTipo === 'SISTEMA';
+              return (
+                <div className={`hilo-msg ${propio ? 'salida' : 'entrada'}`} key={mensaje.id}>
+                  <header>
+                    <strong>
+                      {mensaje.autorTipo === 'AGENTE_IA' ? (
+                        <span className="chip chip-ia">Agente IA</span>
+                      ) : (
+                        mensaje.autor
+                      )}
+                      {mensaje.canal === 'WHATSAPP' ? ' · WhatsApp' : ''}
+                    </strong>
+                    <time>{new Date(mensaje.fecha).toLocaleString('es-CO')}</time>
+                  </header>
+                  <div>{mensaje.contenido}</div>
+                </div>
+              );
+            })}
           </div>
-          {escribiendo && <p>Alguien está escribiendo…</p>}
+          {escribiendo && <p className="hilo-escribiendo">Alguien está escribiendo…</p>}
           <div className="hilo-composer">
             <Input.TextArea
               value={texto}
@@ -364,7 +393,7 @@ export function TicketDetallePage() {
               rows={3}
               placeholder="Escribe un mensaje (también puede llegar al WhatsApp del solicitante)…"
             />
-            <Button type="primary" onClick={enviarMensaje} disabled={!texto.trim()}>
+            <Button type="primary" onClick={() => void enviarMensaje()} disabled={!texto.trim()}>
               Enviar
             </Button>
           </div>
@@ -373,35 +402,48 @@ export function TicketDetallePage() {
 
       {pestana === 'evidencias' && (
         <article className="panel-tarjeta">
-          <input
-            type="file"
-            aria-label="Evidencia"
-            onChange={(evento) => {
-              const archivo = evento.target.files?.[0];
-              if (archivo) void subir(archivo);
-            }}
-          />
-          <ul>
+          <div className="evidencias-subir">
+            <label className="boton-archivo">
+              Adjuntar evidencia
+              <input
+                type="file"
+                aria-label="Evidencia"
+                onChange={(evento) => {
+                  const archivo = evento.target.files?.[0];
+                  if (archivo) void subir(archivo);
+                }}
+              />
+            </label>
+            <p>Fotos, capturas o documentos del caso.</p>
+          </div>
+          <div className="evidencias-rejilla">
             {ticket.adjuntos.map((adjunto) => (
-              <li key={adjunto.id}>
-                <a href={`/api/tickets/${ticket.id}/adjuntos/${adjunto.id}`}>{adjunto.nombre}</a> · {adjunto.tamano} bytes
-              </li>
+              <a
+                key={adjunto.id}
+                className="evidencia-card"
+                href={`/api/tickets/${ticket.id}/adjuntos/${adjunto.id}`}
+              >
+                <strong>{adjunto.nombre}</strong>
+                <span>{Math.max(1, Math.round(adjunto.tamano / 1024))} KB</span>
+              </a>
             ))}
-          </ul>
+          </div>
           {ticket.adjuntos.length === 0 && <p>Sin evidencias todavía.</p>}
         </article>
       )}
 
       {pestana === 'historial' && (
         <article className="panel-tarjeta">
-          <ul>
+          <ol className="linea-tiempo">
             {linea.map((fila, indice) => (
               <li key={`${fila.fecha}-${indice}`}>
-                {new Date(fila.fecha).toLocaleString('es-CO')} · {fila.tipo} · {fila.quien}
+                <time>{new Date(fila.fecha).toLocaleString('es-CO')}</time>
+                <strong>{fila.tipo}</strong>
+                <span>{fila.quien}</span>
               </li>
             ))}
-            {linea.length === 0 && <li>Sin movimientos todavía.</li>}
-          </ul>
+            {linea.length === 0 && <li className="sin-punto">Sin movimientos todavía.</li>}
+          </ol>
         </article>
       )}
     </section>

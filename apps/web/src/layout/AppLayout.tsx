@@ -2,15 +2,17 @@ import {
   BellOutlined,
   BookOutlined,
   CalendarOutlined,
+  CloseOutlined,
   DashboardOutlined,
   FileDoneOutlined,
   FileAddOutlined,
   InboxOutlined,
   RobotOutlined,
+  SearchOutlined,
   SettingOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons';
-import { Avatar, Badge, Button, Layout, Menu } from 'antd';
+import { Avatar, Badge, Button, Input, Layout, Menu } from 'antd';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import { api, obtenerJson, type Sesion } from '../api/http';
@@ -42,6 +44,9 @@ export function AppLayout() {
   const location = useLocation();
   const sesion = useOutletContext<Sesion | null>();
   const [enVivo, setEnVivo] = useState(false);
+  const [busqueda, setBusqueda] = useState('');
+  const [chatAbierto, setChatAbierto] = useState(false);
+  const puedeAgente = rutaPermitida('/agente', sesion?.permisos ?? []);
   const iniciales = (sesion?.nombre ?? 'IN')
     .split(' ')
     .slice(0, 2)
@@ -72,64 +77,104 @@ export function AppLayout() {
     };
   }, []);
 
+  function buscar() {
+    const texto = busqueda.trim();
+    if (!texto) {
+      navigate('/tickets');
+      return;
+    }
+    navigate(`/tickets?q=${encodeURIComponent(texto)}`);
+  }
+
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout className="shell-app" style={{ minHeight: '100vh' }}>
       <a className="saltar" href="#contenido">
         Saltar al contenido
       </a>
-      <Sider className="sider-app" breakpoint="lg" collapsedWidth={0} width={240}>
-        <div className="marca">
-          <div className="marca-s" aria-hidden="true">
-            S
+      <Sider className="sider-app" breakpoint="lg" collapsedWidth={0} width={248}>
+        <div className="sider-cuerpo">
+          <div className="marca">
+            <div className="marca-s" aria-hidden="true">
+              S
+            </div>
+            <div>
+              <strong>SIS</strong>
+              <small>MESA DE AYUDA TI</small>
+              <em className="marca-lema">Soporte de hardware, redes y apps básicas</em>
+            </div>
           </div>
-          <div>
-            <strong>SIS</strong>
-            <small>MESA DE AYUDA TI</small>
+          <Menu
+            mode="inline"
+            theme="dark"
+            selectedKeys={[location.pathname]}
+            items={menuVisible(sesion?.permisos ?? []).map((item) => ({
+              key: item.ruta,
+              icon: ICONOS[item.ruta],
+              label: item.etiqueta,
+            }))}
+            onClick={({ key }) => navigate(key)}
+          />
+          <div className="sider-pie">
+            <span className={enVivo ? 'punto punto-ok' : 'punto'} aria-hidden="true" />
+            <div>
+              <strong>{enVivo ? 'Sistema en vivo' : 'Sin conexión'}</strong>
+              <small>{sesion?.sedeNombre ?? 'Sin sede asignada'}</small>
+            </div>
           </div>
         </div>
-        <Menu
-          mode="inline"
-          theme="dark"
-          selectedKeys={[location.pathname]}
-          items={menuVisible(sesion?.permisos ?? []).map((item) => ({
-            key: item.ruta,
-            icon: ICONOS[item.ruta],
-            label: item.etiqueta,
-          }))}
-          onClick={({ key }) => navigate(key)}
-        />
       </Sider>
       <Layout>
         <Header className="cabecera-app">
-          <div className="en-vivo">
-            <span className={enVivo ? 'punto punto-ok' : 'punto'} aria-hidden="true" />
-            <span>{enVivo ? 'En vivo' : 'Sin conexión'}</span>
-          </div>
-          <Badge count={0} showZero>
-            <Button
-              type="text"
-              aria-label="Notificaciones"
-              icon={<BellOutlined style={{ fontSize: 18 }} />}
-              onClick={() => navigate('/notificaciones')}
-            />
-          </Badge>
-          <Avatar style={{ background: '#14a3a3' }}>{iniciales}</Avatar>
-          <div className="quien">
-            <strong>{sesion?.nombre ?? 'Invitado'}</strong>
-            <span>
-              {sesion
-                ? `${ETIQUETA_ROL[sesion.rol] ?? sesion.rol} · ${sesion.sedeNombre ?? 'Sin sede'}`
-                : 'Sin sesión · Sin sede'}
-            </span>
-          </div>
-          <Button
-            type="text"
-            onClick={() => {
-              void api('/api/auth/logout', { method: 'POST' }).finally(() => navigate('/login'));
+          <form
+            className="cabecera-buscar"
+            onSubmit={(evento) => {
+              evento.preventDefault();
+              buscar();
             }}
           >
-            Salir
-          </Button>
+            <Input
+              allowClear
+              prefix={<SearchOutlined />}
+              placeholder="Buscar tickets, actas o conocimiento…"
+              value={busqueda}
+              onChange={(evento) => setBusqueda(evento.target.value)}
+              aria-label="Buscar"
+            />
+          </form>
+          <div className="cabecera-acciones">
+            <div className="en-vivo solo-movil">
+              <span className={enVivo ? 'punto punto-ok' : 'punto'} aria-hidden="true" />
+              <span>{enVivo ? 'En vivo' : 'Sin conexión'}</span>
+            </div>
+            <Badge count={0} showZero={false}>
+              <Button
+                type="text"
+                className="cabecera-icono"
+                aria-label="Notificaciones"
+                icon={<BellOutlined style={{ fontSize: 18 }} />}
+                onClick={() => navigate('/notificaciones')}
+              />
+            </Badge>
+            <div className="quien-chip">
+              <Avatar style={{ background: '#14a3a3' }}>{iniciales}</Avatar>
+              <div className="quien">
+                <strong>{sesion?.nombre ?? 'Invitado'}</strong>
+                <span>
+                  {sesion
+                    ? `${ETIQUETA_ROL[sesion.rol] ?? sesion.rol} · ${sesion.sedeNombre ?? 'Sin sede'}`
+                    : 'Sin sesión · Sin sede'}
+                </span>
+              </div>
+            </div>
+            <Button
+              type="text"
+              onClick={() => {
+                void api('/api/auth/logout', { method: 'POST' }).finally(() => navigate('/login'));
+              }}
+            >
+              Salir
+            </Button>
+          </div>
         </Header>
         <Content id="contenido" className="contenido-app">
           {sesion?.faltaPerfil && (
@@ -148,6 +193,41 @@ export function AppLayout() {
           )}
         </Content>
       </Layout>
+
+      {puedeAgente && location.pathname !== '/agente' && (
+        <>
+          {chatAbierto && (
+            <aside className="chat-flotante" aria-label="Asistente de la mesa">
+              <header>
+                <div>
+                  <strong>Agente IA · N1</strong>
+                  <span>WhatsApp y mesa de ayuda</span>
+                </div>
+                <Button
+                  type="text"
+                  aria-label="Cerrar asistente"
+                  icon={<CloseOutlined />}
+                  onClick={() => setChatAbierto(false)}
+                />
+              </header>
+              <div className="chat-flotante-cuerpo">
+                <p>Revisa conversaciones en curso o interviene cuando el usuario lo pida.</p>
+                <Button type="primary" block onClick={() => navigate('/agente')}>
+                  Abrir conversaciones
+                </Button>
+              </div>
+            </aside>
+          )}
+          <button
+            type="button"
+            className={`fab-agente${chatAbierto ? ' abierto' : ''}`}
+            aria-label={chatAbierto ? 'Cerrar asistente' : 'Abrir asistente IA'}
+            onClick={() => setChatAbierto((valor) => !valor)}
+          >
+            {chatAbierto ? <CloseOutlined /> : <RobotOutlined />}
+          </button>
+        </>
+      )}
     </Layout>
   );
 }
