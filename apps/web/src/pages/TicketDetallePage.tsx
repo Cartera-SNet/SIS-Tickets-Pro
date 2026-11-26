@@ -242,6 +242,7 @@ export function TicketDetallePage() {
     return <p>{aviso || 'Cargando el caso…'}</p>;
   }
 
+  const ticketId = ticket.id;
   const esMio = sesion?.id === ticket.solicitante.id;
   const esTecnico =
     sesion?.rol === 'TECNICO' ||
@@ -261,7 +262,7 @@ export function TicketDetallePage() {
   }
 
   function urlEvidencia(adjuntoId: string, ver = false) {
-    return `/api/tickets/${ticket.id}/adjuntos/${adjuntoId}${ver ? '?ver=1' : ''}`;
+    return `/api/tickets/${ticketId}/adjuntos/${adjuntoId}${ver ? '?ver=1' : ''}`;
   }
 
   function burbuja(mensaje: Mensaje) {
