@@ -1,8 +1,9 @@
 import { ESTADO_TICKET } from '@sis/shared';
+import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
-import { basename, extname, isAbsolute, join, resolve, sep } from 'node:path';
+import { unlink } from 'node:fs/promises';
+import { basename, extname, isAbsolute, resolve, sep } from 'node:path';
+import { Readable } from 'node:stream';
 import { HttpException, HttpStatus, Injectable, StreamableFile } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -16,6 +17,7 @@ import { TiempoRealGateway } from '../notificaciones/tiempo-real.gateway';
 
 const EXTENSIONES = new Set(['.png', '.jpg', '.jpeg', '.pdf', '.txt', '.webp']);
 const MAX_BYTES = 5 * 1024 * 1024;
+const RUTA_NEON = 'neon';
 
 function raizUploads() {
   return resolve(process.env.UPLOAD_DIR ?? './uploads');
@@ -27,17 +29,18 @@ function dentroDeUploads(absoluto: string) {
   return normalizado === raiz || normalizado.startsWith(`${raiz}${sep}`);
 }
 
-/** Resuelve la ruta guardada (relativa o absoluta antigua) al archivo actual en disco. */
-function resolverArchivo(rutaGuardada: string, ticketId: string) {
+/** Resuelve evidencias antiguas guardadas en disco (antes de Neon). */
+function resolverArchivoDisco(rutaGuardada: string, ticketId: string) {
+  if (!rutaGuardada || rutaGuardada === RUTA_NEON) {
+    return null;
+  }
   const raiz = raizUploads();
   const candidatos: string[] = [];
-  if (rutaGuardada) {
-    if (isAbsolute(rutaGuardada)) {
-      candidatos.push(resolve(rutaGuardada));
-      candidatos.push(resolve(raiz, ticketId, basename(rutaGuardada)));
-    } else {
-      candidatos.push(resolve(raiz, rutaGuardada));
-    }
+  if (isAbsolute(rutaGuardada)) {
+    candidatos.push(resolve(rutaGuardada));
+    candidatos.push(resolve(raiz, ticketId, basename(rutaGuardada)));
+  } else {
+    candidatos.push(resolve(raiz, rutaGuardada));
   }
   for (const candidato of candidatos) {
     const normalizado = resolve(candidato);
@@ -444,24 +447,16 @@ export class TicketsService {
       );
     }
 
-    const raiz = raizUploads();
-    const carpeta = resolve(raiz, ticketId);
-    await mkdir(carpeta, { recursive: true });
-    const nombreArchivo = `${randomUUID()}${extension}`;
-    const rutaRelativa = join(ticketId, nombreArchivo).replace(/\\/g, '/');
-    const absoluto = resolve(raiz, rutaRelativa);
-    if (!dentroDeUploads(absoluto)) {
-      throw new HttpException({ code: 'forbidden', message: 'Ruta de archivo no permitida.' }, HttpStatus.FORBIDDEN);
-    }
-    await writeFile(absoluto, archivo.buffer);
-
+    const hash = createHash('sha256').update(archivo.buffer).digest('hex');
     const adjunto = await this.prisma.adjunto.create({
       data: {
         ticketId,
         nombre: archivo.originalname.replace(/[^\w.\- ]/g, '_').slice(0, 120),
-        ruta: rutaRelativa,
+        ruta: RUTA_NEON,
         mime: archivo.mimetype || 'application/octet-stream',
         tamano: archivo.size,
+        hash,
+        contenido: archivo.buffer,
         subidoPorId: actor.id,
       },
       select: { id: true, nombre: true, tamano: true, mime: true, subidoPorId: true },
@@ -517,26 +512,36 @@ export class TicketsService {
 
   async descargar(actor: Principal, ticketId: string, adjuntoId: string, inline = false) {
     await this.detalle(actor, ticketId);
-    const adjunto = await this.prisma.adjunto.findFirst({ where: { id: adjuntoId, ticketId } });
+    const adjunto = await this.prisma.adjunto.findFirst({
+      where: { id: adjuntoId, ticketId },
+      select: { id: true, nombre: true, mime: true, ruta: true, contenido: true },
+    });
     if (!adjunto) {
       throw new HttpException({ code: 'not_found', message: 'No se encontró el archivo.' }, HttpStatus.NOT_FOUND);
     }
-    const absoluto = resolverArchivo(adjunto.ruta, ticketId);
-    if (!absoluto) {
-      throw new HttpException(
-        {
-          code: 'not_found',
-          message:
-            'La evidencia está registrada, pero el archivo ya no está en el servidor (suele pasar tras un despliegue sin volumen). Pide al solicitante que la vuelva a subir.',
-        },
-        HttpStatus.NOT_FOUND,
-      );
-    }
     const modo = inline ? 'inline' : 'attachment';
-    return new StreamableFile(createReadStream(absoluto), {
+    const cabeceras = {
       type: adjunto.mime,
       disposition: `${modo}; filename="${adjunto.nombre}"`,
-    });
+    };
+
+    if (adjunto.contenido && adjunto.contenido.length > 0) {
+      return new StreamableFile(Readable.from(Buffer.from(adjunto.contenido)), cabeceras);
+    }
+
+    const absoluto = resolverArchivoDisco(adjunto.ruta, ticketId);
+    if (absoluto) {
+      return new StreamableFile(createReadStream(absoluto), cabeceras);
+    }
+
+    throw new HttpException(
+      {
+        code: 'not_found',
+        message:
+          'Esta evidencia es anterior al almacenamiento en Neon y el archivo ya no está en el servidor. Pide al solicitante que la vuelva a subir.',
+      },
+      HttpStatus.NOT_FOUND,
+    );
   }
 
   async quitarAdjunto(actor: Principal, ticketId: string, adjuntoId: string) {
@@ -550,7 +555,7 @@ export class TicketsService {
     if (!esDueno && !esEquipo) {
       throw new HttpException({ code: 'forbidden', message: 'No puedes eliminar esta evidencia.' }, HttpStatus.FORBIDDEN);
     }
-    const absoluto = resolverArchivo(adjunto.ruta, ticketId);
+    const absoluto = resolverArchivoDisco(adjunto.ruta, ticketId);
     if (absoluto) {
       await unlink(absoluto).catch(() => undefined);
     }

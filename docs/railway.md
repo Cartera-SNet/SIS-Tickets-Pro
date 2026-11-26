@@ -15,7 +15,7 @@ El repositorio trae un `Dockerfile` en la raíz. Railway lo detecta solo y lo us
    | `DATABASE_URL` | La cadena de Neon (con o sin pooler y `channel_binding`). Al arrancar se quita `channel_binding` y, si el host es el pooler, se usa el host directo para que Prisma no falle. También sirve `${{Postgres.DATABASE_URL}}` si la base es la de Railway. |
    | `SECRET_KEY` | un texto largo y aleatorio. Para generarlo: `openssl rand -hex 32` |
 
-4. **Volumen** (para adjuntos de tickets y actas en PDF): en el servicio, **Settings → Volumes → Add Volume**, ruta de montaje `/data`. La app lo detecta sola (`RAILWAY_VOLUME_MOUNT_PATH`). Sin volumen todo funciona, pero los archivos se pierden en cada despliegue.
+4. **Volumen** (opcional, para actas en PDF u otros archivos de disco): en el servicio, **Settings → Volumes → Add Volume**, ruta de montaje `/data`. La app lo detecta sola (`RAILWAY_VOLUME_MOUNT_PATH`). Las **evidencias de tickets** se guardan en Neon (`adjuntos.contenido` BYTEA) y ya no dependen del volumen.
 5. **Settings → Networking → Generate Domain**. La app toma ese dominio sola para `WEB_ORIGIN` (enlaces de firma y verificación de actas). Si generas el dominio después del primer despliegue, haz **Redeploy** para que la app lo tome.
 6. Opcional: **Settings → Deploy → Healthcheck Path** = `/health`.
 
@@ -75,7 +75,8 @@ Con `AUTH_MODE=oidc` no hay ingreso de demostración. Antes de cambiarlo, deja d
 | `Faltan variables obligatorias: ...` | Falta `DATABASE_URL` o `SECRET_KEY` en el servicio. |
 | `No se pudieron aplicar las migraciones` | `DATABASE_URL` mal escrita o la base no está activa. Revisa que la referencia apunte al servicio de PostgreSQL. |
 | `/health/ready` responde 503 | La app vive pero no alcanza la base. `/health` solo dice que el proceso está vivo. |
-| Los adjuntos o actas desaparecen tras desplegar | Falta el volumen en `/data`. |
+| Las evidencias antiguas (antes de Neon) no abren | Se subieron a disco efímero; pídelas de nuevo. Las nuevas viven en `adjuntos.contenido`. |
+| Las actas en PDF desaparecen tras desplegar | Falta el volumen en `/data` (las evidencias de tickets ya van a Neon). |
 | Error de Prisma con `libssl` | La imagen ya instala OpenSSL. Si cambias el `Dockerfile`, conserva ese paso. |
 
 ## Probar la imagen en tu equipo

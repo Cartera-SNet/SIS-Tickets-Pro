@@ -631,10 +631,13 @@ model Adjunto {
   ticketId    String?   @map("ticket_id") @db.Uuid
   ticket      Ticket?   @relation(fields: [ticketId], references: [id], onDelete: Restrict)
   nombre      String
+  /// Marcador `neon` cuando el binario vive en `contenido`; rutas antiguas de disco se conservan.
   ruta        String
   mime        String
   tamano      Int
   hash        String?
+  /// Binario de la evidencia (Neon/Postgres). Fuente principal tras el cambio a almacenamiento en BD.
+  contenido   Bytes?    @db.ByteA
   subidoPorId String?   @map("subido_por_id") @db.Uuid
   subidoPor   Usuario?  @relation(fields: [subidoPorId], references: [id], onDelete: Restrict)
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
