@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
 import { unlink } from 'node:fs/promises';
 import { basename, extname, isAbsolute, resolve, sep } from 'node:path';
-import { Readable } from 'node:stream';
 import { HttpException, HttpStatus, Injectable, StreamableFile } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -526,7 +525,10 @@ export class TicketsService {
     };
 
     if (adjunto.contenido && adjunto.contenido.length > 0) {
-      return new StreamableFile(Readable.from(Buffer.from(adjunto.contenido)), cabeceras);
+      // Copia explícita: evita el choque TS SharedArrayBuffer vs ArrayBuffer de Buffer.from(Uint8Array).
+      const bytes = Buffer.alloc(adjunto.contenido.length);
+      bytes.set(adjunto.contenido);
+      return new StreamableFile(bytes, cabeceras);
     }
 
     const absoluto = resolverArchivoDisco(adjunto.ruta, ticketId);
