@@ -426,6 +426,8 @@ export function TicketDetallePage() {
   }
 
   const ticketId = ticket.id;
+  // Copia ya validada: dentro de funciones internas TypeScript pierde la comprobación de nulo.
+  const ticketActual: Detalle = ticket;
   const esMio = sesion?.id === ticket.solicitante.id;
   const esEquipo = sesion?.rol === 'TECNICO' || sesion?.rol === 'ADMINISTRADOR';
   const esTecnico = esEquipo || Boolean(sesion?.permisos?.includes('tickets.ver_sede'));
@@ -534,7 +536,7 @@ export function TicketDetallePage() {
   }
 
   function tarjetaSeguimiento() {
-    const mensajesSoporte = ticket.mensajes.filter(
+    const mensajesSoporte = ticketActual.mensajes.filter(
       (mensaje) => mensaje.autorTipo === 'TECNICO' || mensaje.autorTipo === 'AGENTE_IA',
     );
     const ultimoSoporte = mensajesSoporte[mensajesSoporte.length - 1];
@@ -543,12 +545,12 @@ export function TicketDetallePage() {
         <h2>{esMio ? 'Seguimiento de tu caso' : 'Seguimiento'}</h2>
         <div className="dato-fila">
           <span>Quién atiende</span>
-          <span>{ticket.responsable?.nombre ?? 'Aún sin asignar'}</span>
+          <span>{ticketActual.responsable?.nombre ?? 'Aún sin asignar'}</span>
         </div>
         <div className="dato-fila">
           <span>Estado</span>
           <span>
-            {ticket.estadoNombre} · Nivel {ticket.nivel.replace('N', '')}
+            {ticketActual.estadoNombre} · Nivel {ticketActual.nivel.replace('N', '')}
           </span>
         </div>
         <div className="dato-fila">
@@ -559,10 +561,10 @@ export function TicketDetallePage() {
               : 'Soporte aún no ha respondido en el chat'}
           </span>
         </div>
-        {ticket.fechaObjetivoSolucion && (
+        {ticketActual.fechaObjetivoSolucion && (
           <div className="dato-fila">
             <span>ANS</span>
-            <span>Vence en {restanteAns(ticket.fechaObjetivoSolucion)}</span>
+            <span>Vence en {restanteAns(ticketActual.fechaObjetivoSolucion)}</span>
           </div>
         )}
         <div className="seguimiento-acciones">

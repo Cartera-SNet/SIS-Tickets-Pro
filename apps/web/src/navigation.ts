@@ -15,6 +15,7 @@ export const NAV: ItemNav[] = [
   { ruta: '/conocimiento', etiqueta: 'Base de conocimiento', nota: 'Los artículos llegan en el sprint 5.' },
   { ruta: '/reportes', etiqueta: 'Reportes', nota: 'Los reportes llegan en el sprint 8.' },
   { ruta: '/configuracion', etiqueta: 'Configuración', nota: 'La administración llega a partir del sprint 2.' },
+  { ruta: '/manual', etiqueta: 'Manual', nota: 'Qué hace cada pantalla y cómo usarla.' },
 ];
 
 export function itemPorRuta(ruta: string): ItemNav | undefined {
@@ -32,6 +33,7 @@ const PERMISOS_DE_RUTA: Record<string, readonly string[] | null> = {
   '/conocimiento': ['kb.aprobar', 'tickets.ver_sede'],
   '/reportes': ['reportes.ver'],
   '/configuracion': ['configuracion.editar', 'catalogos.editar', 'usuarios.administrar'],
+  '/manual': null,
 };
 
 export function rutaPermitida(ruta: string, permisos: readonly string[]): boolean {

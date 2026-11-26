@@ -7,6 +7,7 @@ import { AccesoPage } from './pages/AccesoPage';
 import { ConfiguracionPage } from './pages/ConfiguracionPage';
 import { InicioPage } from './pages/InicioPage';
 import { LoginPage } from './pages/LoginPage';
+import { ManualPage } from './pages/ManualPage';
 import { NuevoTicketPage } from './pages/NuevoTicketPage';
 import { CatalogosPage } from './pages/CatalogosPage';
 import { AsignacionPage } from './pages/AsignacionPage';
@@ -78,6 +79,7 @@ export function App() {
               <Route path="configuracion/agente" element={<AgenteConfigPage />} />
               <Route path="configuracion/plantillas" element={<PlantillasPage />} />
               <Route path="configuracion" element={<ConfiguracionPage />} />
+              <Route path="manual" element={<ManualPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Route>

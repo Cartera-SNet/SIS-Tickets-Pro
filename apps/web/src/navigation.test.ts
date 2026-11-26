@@ -15,6 +15,7 @@ describe('navegación y tema', () => {
       'Base de conocimiento',
       'Reportes',
       'Configuración',
+      'Manual',
     ]);
   });
 
@@ -25,6 +26,7 @@ describe('navegación y tema', () => {
       'Tickets',
       'Nuevo ticket',
       'Notificaciones',
+      'Manual',
     ]);
   });
 

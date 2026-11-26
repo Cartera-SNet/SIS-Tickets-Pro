@@ -447,6 +447,10 @@ export class TicketsService {
     }
 
     const hash = createHash('sha256').update(archivo.buffer).digest('hex');
+    // Copia explícita a ArrayBuffer: evita el choque de tipos SharedArrayBuffer vs ArrayBuffer con Prisma Bytes.
+    const copiaContenido = new ArrayBuffer(archivo.buffer.length);
+    const contenidoBytes = new Uint8Array(copiaContenido);
+    contenidoBytes.set(archivo.buffer);
     const adjunto = await this.prisma.adjunto.create({
       data: {
         ticketId,
@@ -455,7 +459,7 @@ export class TicketsService {
         mime: archivo.mimetype || 'application/octet-stream',
         tamano: archivo.size,
         hash,
-        contenido: archivo.buffer,
+        contenido: contenidoBytes,
         subidoPorId: actor.id,
       },
       select: { id: true, nombre: true, tamano: true, mime: true, subidoPorId: true },

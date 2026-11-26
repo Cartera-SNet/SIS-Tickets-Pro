@@ -9,6 +9,7 @@ import {
   InboxOutlined,
   RobotOutlined,
   SearchOutlined,
+  QuestionCircleOutlined,
   SettingOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons';
@@ -32,6 +33,7 @@ const ICONOS: Record<string, ReactNode> = {
   '/conocimiento': <BookOutlined />,
   '/reportes': <InboxOutlined />,
   '/configuracion': <SettingOutlined />,
+  '/manual': <QuestionCircleOutlined />,
 };
 
 const ETIQUETA_ROL: Record<string, string> = {
