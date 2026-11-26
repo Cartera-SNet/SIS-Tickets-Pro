@@ -5,7 +5,10 @@ alwaysApply: true
 
 # Subir lo pedido y respaldar la versión anterior
 
-Cada requerimiento que el usuario pida en este repositorio se sube a `origin` (`https://github.com/Ogaza-Jussef/SIS-Tickets.git`), rama `main`. No esperes un mensaje aparte de commit o push.
+Este es el repositorio de trabajo activo:
+`G:\Otros ordenadores\Mi PC\Victor Yepes - Proyectos\PROYECTOS - SIS\SIS-Tickets`
+
+Cada requerimiento se sube a `origin` (`https://github.com/Cartera-SNet/SIS-Tickets.git`), rama `main`. No esperes un mensaje aparte de commit o push.
 
 ## Antes de modificar
 

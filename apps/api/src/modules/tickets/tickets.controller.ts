@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -12,7 +13,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { IsBoolean, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import type { Request } from 'express';
 import { CualquierPermiso, PermisoGuard } from '../auth/permiso.guard';
 import { SesionGuard } from '../auth/sesion.guard';
@@ -28,10 +29,21 @@ class CrearTicketDto {
   @IsUUID()
   subcategoriaId?: string;
 
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  subcategoriaIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  observacionCategoria?: string;
+
+  @IsOptional()
   @IsString()
   @MinLength(4)
   @MaxLength(120)
-  titulo!: string;
+  titulo?: string;
 
   @IsString()
   @MinLength(8)
@@ -45,15 +57,18 @@ class CrearTicketDto {
   @IsUUID()
   equipoId?: string;
 
+  @IsOptional()
   @IsBoolean()
-  puedeTrabajar!: boolean;
+  puedeTrabajar?: boolean;
 
+  @IsOptional()
   @IsInt()
   @Min(1)
-  personas!: number;
+  personas?: number;
 
+  @IsOptional()
   @IsBoolean()
-  areaCompleta!: boolean;
+  areaCompleta?: boolean;
 }
 
 class ConfirmarDto {
@@ -146,8 +161,19 @@ export class TicketsController {
     @Req() peticion: Request,
     @Param('id', ParseUUIDPipe) id: string,
     @Param('adjuntoId', ParseUUIDPipe) adjuntoId: string,
+    @Query('ver') ver?: string,
   ) {
-    return this.tickets.descargar(principalDe(peticion), id, adjuntoId);
+    return this.tickets.descargar(principalDe(peticion), id, adjuntoId, ver === '1' || ver === 'true');
+  }
+
+  @Delete(':id/adjuntos/:adjuntoId')
+  @CualquierPermiso('tickets.ver_propios', 'tickets.ver_sede')
+  quitarAdjunto(
+    @Req() peticion: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('adjuntoId', ParseUUIDPipe) adjuntoId: string,
+  ) {
+    return this.tickets.quitarAdjunto(principalDe(peticion), id, adjuntoId);
   }
 
   @Post(':id/escalar')

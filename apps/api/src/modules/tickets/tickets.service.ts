@@ -1,6 +1,6 @@
 import { ESTADO_TICKET } from '@sis/shared';
 import { createReadStream } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { extname, join, resolve } from 'node:path';
 import { HttpException, HttpStatus, Injectable, StreamableFile } from '@nestjs/common';
@@ -12,6 +12,7 @@ import { puedeTransicionar, type EstadoTicket } from './maquina-estados';
 import { validarEscalamiento, type Nivel } from './escalamiento';
 import { debeReabrirSinConfirmacion, estaPorVencer } from './vigilancia';
 import { AvisosService } from '../notificaciones/avisos.service';
+import { TiempoRealGateway } from '../notificaciones/tiempo-real.gateway';
 
 const EXTENSIONES = new Set(['.png', '.jpg', '.jpeg', '.pdf', '.txt', '.webp']);
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -21,6 +22,7 @@ export class TicketsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly avisos: AvisosService,
+    private readonly tiempo: TiempoRealGateway,
   ) {}
 
   async listar(
@@ -87,20 +89,66 @@ export class TicketsService {
     entrada: {
       categoriaId: string;
       subcategoriaId?: string;
-      titulo: string;
+      subcategoriaIds?: string[];
+      observacionCategoria?: string;
+      titulo?: string;
       descripcion: string;
       ubicacionId: string;
       equipoId?: string;
-      puedeTrabajar: boolean;
-      personas: number;
-      areaCompleta: boolean;
+      puedeTrabajar?: boolean;
+      personas?: number;
+      areaCompleta?: boolean;
     },
   ) {
-    const codigo = prioridadPorImpacto({
-      puedeTrabajar: entrada.puedeTrabajar,
-      personas: entrada.personas,
-      areaCompleta: entrada.areaCompleta,
-    });
+    const puedeTrabajar = entrada.puedeTrabajar ?? true;
+    const personas = entrada.personas ?? 1;
+    const areaCompleta = entrada.areaCompleta ?? false;
+    const codigo = prioridadPorImpacto({ puedeTrabajar, personas, areaCompleta });
+    const idsElegidos = [
+      ...new Set(
+        [...(entrada.subcategoriaIds ?? []), entrada.subcategoriaId].filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const tipos = idsElegidos.length
+      ? await this.prisma.subcategoria.findMany({
+          where: { id: { in: idsElegidos }, categoriaId: entrada.categoriaId, deletedAt: null, activo: true },
+          select: { id: true, nombre: true },
+        })
+      : [];
+    const observacion = entrada.observacionCategoria?.trim() ?? '';
+    const eligioOtros = tipos.some((item) => item.nombre.toLowerCase() === 'otros') || (!tipos.length && observacion);
+    if (eligioOtros && observacion.length < 4) {
+      throw new HttpException(
+        { code: 'validation_error', message: 'Si eliges Otros, escribe una observación de al menos 4 caracteres.' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (!tipos.length && !observacion && !entrada.titulo?.trim()) {
+      throw new HttpException(
+        { code: 'validation_error', message: 'Elige al menos un tipo de incidencia o solicitud.' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const nombresTipo = tipos.map((item) => item.nombre);
+    if (observacion && !nombresTipo.some((nombre) => nombre.toLowerCase() === 'otros')) {
+      nombresTipo.push(`Otros: ${observacion}`);
+    } else if (observacion) {
+      const indice = nombresTipo.findIndex((nombre) => nombre.toLowerCase() === 'otros');
+      if (indice >= 0) {
+        nombresTipo[indice] = `Otros: ${observacion}`;
+      }
+    }
+    const subcategoriaId = tipos.find((item) => item.nombre.toLowerCase() !== 'otros')?.id ?? tipos[0]?.id ?? null;
+    const descripcionBase = entrada.descripcion.trim();
+    const descripcion =
+      nombresTipo.length > 0
+        ? `Tipos: ${nombresTipo.join(' · ')}\n\n${descripcionBase}`
+        : descripcionBase;
+    const titulo =
+      entrada.titulo?.trim() ||
+      (nombresTipo[0] ? nombresTipo[0].slice(0, 120) : descripcionBase.slice(0, 80)) ||
+      'Solicitud de mesa de ayuda';
+
     const creado = await this.prisma.$transaction(async (tx) => {
       const consecutivo = await tx.consecutivo.update({
         where: { prefijo: 'MA' },
@@ -122,14 +170,14 @@ export class TicketsService {
           canalOrigen: 'WEB',
           solicitanteId,
           categoriaId: entrada.categoriaId,
-          subcategoriaId: entrada.subcategoriaId || null,
-          titulo: entrada.titulo.trim(),
-          descripcion: entrada.descripcion.trim(),
+          subcategoriaId,
+          titulo,
+          descripcion,
           sedeId: ubicacion.sedeId,
           ubicacionId: ubicacion.id,
           equipoId: entrada.equipoId || null,
-          impactoPuedeTrabajar: entrada.puedeTrabajar,
-          impactoPersonas: entrada.personas,
+          impactoPuedeTrabajar: puedeTrabajar,
+          impactoPersonas: personas,
           prioridadId: prioridad.id,
           nivel: 'N1',
           estado: 'NUEVO',
@@ -146,7 +194,13 @@ export class TicketsService {
           ticketId: ticket.id,
           usuarioId: solicitanteId,
           tipo: 'creacion',
-          datosNuevos: { numero: ticket.numero, estado: 'NUEVO', prioridad: codigo },
+          datosNuevos: {
+            numero: ticket.numero,
+            estado: 'NUEVO',
+            prioridad: codigo,
+            tipos: nombresTipo,
+            observacionCategoria: observacion || null,
+          },
         },
       });
       return {
@@ -251,13 +305,21 @@ export class TicketsService {
         contenido: mensaje.contenido,
         fecha: mensaje.fecha,
       })),
+      adjuntos: ticket.adjuntos.map((adjunto) => ({
+        id: adjunto.id,
+        nombre: adjunto.nombre,
+        tamano: adjunto.tamano,
+        mime: adjunto.mime,
+        subidoPorId: adjunto.subidoPorId,
+      })),
     };
   }
 
   async comentar(actor: Principal, ticketId: string, contenido: string) {
     await this.detalle(actor, ticketId);
-    const autorTipo = actor.rol === 'SOLICITANTE' ? 'USUARIO' : actor.rol === 'TECNICO' ? 'TECNICO' : 'USUARIO';
-    return this.prisma.mensaje.create({
+    const autorTipo =
+      actor.rol === 'SOLICITANTE' ? 'USUARIO' : actor.rol === 'TECNICO' ? 'TECNICO' : actor.rol === 'ADMINISTRADOR' ? 'TECNICO' : 'USUARIO';
+    const mensaje = await this.prisma.mensaje.create({
       data: {
         ticketId,
         autorTipo,
@@ -266,8 +328,19 @@ export class TicketsService {
         contenido: contenido.trim(),
         estadoEntrega: 'ENTREGADO',
       },
-      select: { id: true, contenido: true, canal: true, fecha: true },
+      include: { autor: { select: { nombre: true } } },
     });
+    const payload = {
+      id: mensaje.id,
+      canal: mensaje.canal,
+      autorTipo: mensaje.autorTipo,
+      autor: mensaje.autor?.nombre ?? 'Usuario',
+      contenido: mensaje.contenido,
+      fecha: mensaje.fecha,
+      ticketId,
+    };
+    this.tiempo.emitirTicket(ticketId, 'ticket:mensaje', payload);
+    return payload;
   }
 
   async adjuntar(actor: Principal, ticketId: string, archivo: { originalname: string; buffer: Buffer; mimetype: string; size: number }) {
@@ -284,7 +357,7 @@ export class TicketsService {
     const nombre = `${randomUUID()}${extension}`;
     const ruta = join(carpeta, nombre);
     await writeFile(ruta, archivo.buffer);
-    return this.prisma.adjunto.create({
+    const adjunto = await this.prisma.adjunto.create({
       data: {
         ticketId,
         nombre: archivo.originalname.replace(/[^\w.\- ]/g, '_').slice(0, 120),
@@ -293,11 +366,13 @@ export class TicketsService {
         tamano: archivo.size,
         subidoPorId: actor.id,
       },
-      select: { id: true, nombre: true, tamano: true },
+      select: { id: true, nombre: true, tamano: true, mime: true, subidoPorId: true },
     });
+    this.tiempo.emitirTicket(ticketId, 'ticket:adjunto', { ...adjunto, ticketId, accion: 'agregado' });
+    return adjunto;
   }
 
-  async descargar(actor: Principal, ticketId: string, adjuntoId: string) {
+  async descargar(actor: Principal, ticketId: string, adjuntoId: string, inline = false) {
     await this.detalle(actor, ticketId);
     const adjunto = await this.prisma.adjunto.findFirst({ where: { id: adjuntoId, ticketId } });
     if (!adjunto) {
@@ -308,10 +383,32 @@ export class TicketsService {
     if (!absoluto.startsWith(raiz)) {
       throw new HttpException({ code: 'forbidden', message: 'No tienes permiso para esta acción.' }, HttpStatus.FORBIDDEN);
     }
+    const modo = inline ? 'inline' : 'attachment';
     return new StreamableFile(createReadStream(absoluto), {
       type: adjunto.mime,
-      disposition: `attachment; filename="${adjunto.nombre}"`,
+      disposition: `${modo}; filename="${adjunto.nombre}"`,
     });
+  }
+
+  async quitarAdjunto(actor: Principal, ticketId: string, adjuntoId: string) {
+    const ticket = await this.detalle(actor, ticketId);
+    const adjunto = await this.prisma.adjunto.findFirst({ where: { id: adjuntoId, ticketId } });
+    if (!adjunto) {
+      throw new HttpException({ code: 'not_found', message: 'No se encontró el archivo.' }, HttpStatus.NOT_FOUND);
+    }
+    const esDueno = adjunto.subidoPorId === actor.id || ticket.solicitante.id === actor.id;
+    const esEquipo = actor.rol === 'TECNICO' || actor.rol === 'ADMINISTRADOR';
+    if (!esDueno && !esEquipo) {
+      throw new HttpException({ code: 'forbidden', message: 'No puedes eliminar esta evidencia.' }, HttpStatus.FORBIDDEN);
+    }
+    const raiz = resolve(process.env.UPLOAD_DIR ?? './uploads');
+    const absoluto = resolve(adjunto.ruta);
+    if (absoluto.startsWith(raiz)) {
+      await unlink(absoluto).catch(() => undefined);
+    }
+    await this.prisma.adjunto.delete({ where: { id: adjunto.id } });
+    this.tiempo.emitirTicket(ticketId, 'ticket:adjunto', { id: adjunto.id, ticketId, accion: 'eliminado' });
+    return { ok: true, id: adjunto.id };
   }
 
   async confirmar(actor: Principal, ticketId: string, entrada: { confirmar: boolean; calificacion?: number }) {

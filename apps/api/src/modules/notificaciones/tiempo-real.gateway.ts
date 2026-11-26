@@ -27,6 +27,10 @@ export class TiempoRealGateway implements OnGatewayConnection, OnGatewayDisconne
     this.servidor?.to(salaUsuario(usuarioId)).emit(evento, datos);
   }
 
+  emitirTicket(ticketId: string, evento: string, datos: object): void {
+    this.servidor?.to(salaTicket(ticketId)).emit(evento, datos);
+  }
+
   async handleConnection(cliente: Socket): Promise<void> {
     const token = leerCookie(cliente.handshake.headers.cookie, 'sis_sesion');
     const usuario = await this.auth.resolver(token);

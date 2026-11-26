@@ -37,6 +37,6 @@ export class MatrizController {
   imports: [AuthModule],
   controllers: [NotificacionesController, MatrizController],
   providers: [TiempoRealGateway, AvisosService],
-  exports: [AvisosService],
+  exports: [AvisosService, TiempoRealGateway],
 })
 export class NotificacionesModule {}
