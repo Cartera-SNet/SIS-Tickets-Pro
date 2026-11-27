@@ -1,6 +1,7 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { ErrorHttp, type Sesion, api } from '../api/http';
+import { TiempoRealProvider } from '../api/tiempo-real';
 import { PendientePage } from '../pages/PendientePage';
 
 export function RequireSession() {
@@ -34,5 +35,9 @@ export function RequireSession() {
   if (estado === 'pendiente') {
     return <PendientePage />;
   }
-  return <Outlet context={sesion} />;
+  return (
+    <TiempoRealProvider>
+      <Outlet context={sesion} />
+    </TiempoRealProvider>
+  );
 }

@@ -1,7 +1,7 @@
 import { Button } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { ErrorHttp, api } from '../api/http';
-import { conectarTiempoReal } from '../api/tiempo-real';
+import { useTiempoReal } from '../api/tiempo-real';
 
 type Aviso = {
   id: string;
@@ -30,10 +30,11 @@ function claseCanal(estado: string): string {
 }
 
 export function NotificacionesPage() {
+  const { on, conectado } = useTiempoReal();
   const [avisos, setAvisos] = useState<Aviso[]>([]);
-  const [enVivo, setEnVivo] = useState(false);
   const [error, setError] = useState('');
   const [filtro, setFiltro] = useState<'todas' | 'sin-leer'>('todas');
+  const enVivo = conectado;
 
   function cargar() {
     api<Aviso[]>('/api/notificaciones')
@@ -43,15 +44,13 @@ export function NotificacionesPage() {
 
   useEffect(() => {
     cargar();
-    const socket = conectarTiempoReal();
-    socket.on('connect', () => setEnVivo(true));
-    socket.on('disconnect', () => setEnVivo(false));
-    socket.on('pendientes', () => cargar());
-    socket.on('notificacion', () => cargar());
+    const offPendientes = on('pendientes', (() => cargar()) as (...args: never[]) => void);
+    const offNotificacion = on('notificacion', (() => cargar()) as (...args: never[]) => void);
     return () => {
-      socket.close();
+      offPendientes();
+      offNotificacion();
     };
-  }, []);
+  }, [on]);
 
   async function marcar(id: string) {
     await api(`/api/notificaciones/${id}/leida`, { method: 'POST' });

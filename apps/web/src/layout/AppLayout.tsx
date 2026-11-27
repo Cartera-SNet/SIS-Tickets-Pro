@@ -17,7 +17,7 @@ import { Avatar, Badge, Button, Input, Layout, Menu } from 'antd';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import { api, obtenerJson, type Sesion } from '../api/http';
-import { conectarTiempoReal } from '../api/tiempo-real';
+import { useTiempoReal } from '../api/tiempo-real';
 import { MarcaSis } from '../components/MarcaSis';
 import { menuVisible, rutaPermitida } from '../navigation';
 import { useToasts } from '../ui/Toasts';
@@ -51,9 +51,11 @@ export function AppLayout() {
   const location = useLocation();
   const sesion = useOutletContext<Sesion | null>();
   const { mostrar } = useToasts();
+  const { on, chatEnFocoId, conectado } = useTiempoReal();
   const [enVivo, setEnVivo] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [chatAbierto, setChatAbierto] = useState(false);
+  const [noLeidas, setNoLeidas] = useState(0);
   const [textoAgente, setTextoAgente] = useState('');
   const [enviandoAgente, setEnviandoAgente] = useState(false);
   const [hiloAgente, setHiloAgente] = useState<BurbujaFab[]>([
@@ -64,8 +66,10 @@ export function AppLayout() {
     },
   ]);
   const chatAbiertoRef = useRef(false);
+  const chatEnFocoRef = useRef<string | null>(null);
   const rutaRef = useRef(location.pathname);
   chatAbiertoRef.current = chatAbierto;
+  chatEnFocoRef.current = chatEnFocoId;
   rutaRef.current = location.pathname;
 
   const iniciales = (sesion?.nombre ?? 'IN')
@@ -100,75 +104,108 @@ export function AppLayout() {
   }, []);
 
   useEffect(() => {
+    setEnVivo((prev) => prev || conectado);
+  }, [conectado]);
+
+  useEffect(() => {
     if (!sesion?.id) {
       return;
     }
-    const socket = conectarTiempoReal();
-    const onMensaje = (payload: { ticketId?: string; autor?: string; contenido?: string; autorTipo?: string }) => {
-      const ticketId = payload.ticketId;
-      if (!ticketId) {
-        return;
-      }
-      const enEsteTicket = rutaRef.current === `/tickets/${ticketId}`;
-      const chatTicketFoco = enEsteTicket && document.visibilityState === 'visible';
-      if (chatTicketFoco || chatAbiertoRef.current) {
-        return;
-      }
-      if (payload.autorTipo === 'USUARIO' && !esMesa) {
-        return;
-      }
-      mostrar({
-        titulo: `Mensaje · ${payload.autor ?? 'Chat'}`,
-        cuerpo: payload.contenido?.slice(0, 120) ?? 'Nuevo mensaje',
-        href: `/tickets/${ticketId}`,
-      });
-    };
-    const onAsignado = (payload: { ticketId?: string; numero?: string }) => {
-      if (!payload.ticketId) {
-        return;
-      }
-      mostrar({
-        titulo: `${payload.numero ?? 'Ticket'} asignado`,
-        cuerpo: 'Te asignaron un caso para atención.',
-        href: `/tickets/${payload.ticketId}`,
-      });
-    };
-    const onResuelto = (payload: { ticketId?: string; numero?: string }) => {
-      if (!payload.ticketId) {
-        return;
-      }
-      mostrar({
-        titulo: `${payload.numero ?? 'Ticket'} solucionado`,
-        cuerpo: 'Confirma si tu solicitud ya está resuelta.',
-        href: `/tickets/${payload.ticketId}`,
-      });
-    };
-    const onCreado = (payload: { id?: string; ticketId?: string; numero?: string; titulo?: string }) => {
-      const id = payload.id ?? payload.ticketId;
-      if (!id || !esMesa) {
-        return;
-      }
-      if (rutaRef.current.startsWith('/tickets')) {
-        return;
-      }
-      mostrar({
-        titulo: `Nuevo ticket ${payload.numero ?? ''}`.trim(),
-        cuerpo: payload.titulo ?? 'Caso creado',
-        href: `/tickets/${id}`,
-      });
-    };
-    socket.on('ticket:mensaje', onMensaje);
-    socket.on('ticket:asignado', onAsignado);
-    socket.on('ticket:resuelto', onResuelto);
-    socket.on('ticket:creado', onCreado);
+    const offMensaje = on(
+      'ticket:mensaje',
+      ((payload: { ticketId?: string; autor?: string; contenido?: string; autorTipo?: string; id?: string }) => {
+        const ticketId = payload.ticketId;
+        if (!ticketId) {
+          return;
+        }
+        // Si el chat de ese ticket está abierto y en foco, solo actualiza el hilo (sin toast).
+        if (chatEnFocoRef.current === ticketId && document.visibilityState === 'visible') {
+          return;
+        }
+        if (chatAbiertoRef.current) {
+          return;
+        }
+        mostrar({
+          id: payload.id ? `msg-${payload.id}` : undefined,
+          titulo: `Mensaje · ${payload.autor ?? 'Chat'}`,
+          cuerpo: payload.contenido?.slice(0, 120) ?? 'Nuevo mensaje',
+          href: `/tickets/${ticketId}`,
+        });
+        setNoLeidas((n) => n + 1);
+      }) as (...args: never[]) => void,
+    );
+    const offAsignado = on(
+      'ticket:asignado',
+      ((payload: { ticketId?: string; numero?: string }) => {
+        if (!payload.ticketId) {
+          return;
+        }
+        mostrar({
+          titulo: `${payload.numero ?? 'Ticket'} asignado`,
+          cuerpo: 'Te asignaron un caso para atención.',
+          href: `/tickets/${payload.ticketId}`,
+        });
+        setNoLeidas((n) => n + 1);
+      }) as (...args: never[]) => void,
+    );
+    const offResuelto = on(
+      'ticket:resuelto',
+      ((payload: { ticketId?: string; numero?: string }) => {
+        if (!payload.ticketId) {
+          return;
+        }
+        mostrar({
+          titulo: `${payload.numero ?? 'Ticket'} solucionado`,
+          cuerpo: 'Confirma si tu solicitud ya está resuelta.',
+          href: `/tickets/${payload.ticketId}`,
+        });
+        setNoLeidas((n) => n + 1);
+      }) as (...args: never[]) => void,
+    );
+    const offCreado = on(
+      'ticket:creado',
+      ((payload: { id?: string; ticketId?: string; numero?: string; titulo?: string }) => {
+        const id = payload.id ?? payload.ticketId;
+        if (!id || !esMesa) {
+          return;
+        }
+        mostrar({
+          titulo: `Nuevo ticket ${payload.numero ?? ''}`.trim(),
+          cuerpo: payload.titulo ?? 'Caso creado',
+          href: `/tickets/${id}`,
+        });
+        setNoLeidas((n) => n + 1);
+      }) as (...args: never[]) => void,
+    );
+    const offNotificacion = on(
+      'notificacion',
+      ((payload: { id?: string; titulo?: string; cuerpo?: string }) => {
+        mostrar({
+          id: payload.id ? `n-${payload.id}` : undefined,
+          titulo: payload.titulo ?? 'Notificación',
+          cuerpo: payload.cuerpo,
+          href: '/notificaciones',
+        });
+        setNoLeidas((n) => n + 1);
+      }) as (...args: never[]) => void,
+    );
+    const offPendientes = on(
+      'pendientes',
+      ((lista: { id: string }[]) => {
+        if (Array.isArray(lista) && lista.length) {
+          setNoLeidas((n) => Math.max(n, lista.length));
+        }
+      }) as (...args: never[]) => void,
+    );
     return () => {
-      socket.off('ticket:mensaje', onMensaje);
-      socket.off('ticket:asignado', onAsignado);
-      socket.off('ticket:resuelto', onResuelto);
-      socket.off('ticket:creado', onCreado);
-      socket.close();
+      offMensaje();
+      offAsignado();
+      offResuelto();
+      offCreado();
+      offNotificacion();
+      offPendientes();
     };
-  }, [sesion?.id, esMesa, mostrar]);
+  }, [sesion?.id, esMesa, mostrar, on]);
 
   function buscar() {
     const texto = busqueda.trim();
@@ -226,9 +263,9 @@ export function AppLayout() {
             onClick={({ key }) => navigate(key)}
           />
           <div className="sider-pie">
-            <span className={enVivo ? 'punto punto-ok' : 'punto'} aria-hidden="true" />
+            <span className={enVivo || conectado ? 'punto punto-ok' : 'punto'} aria-hidden="true" />
             <div>
-              <strong>{enVivo ? 'Sistema en vivo' : 'Sin conexión'}</strong>
+              <strong>{enVivo || conectado ? 'Sistema en vivo' : 'Sin conexión'}</strong>
               <small>{sesion?.sedeNombre ?? 'Sin sede asignada'}</small>
             </div>
           </div>
@@ -254,16 +291,19 @@ export function AppLayout() {
           </form>
           <div className="cabecera-acciones">
             <div className="en-vivo solo-movil">
-              <span className={enVivo ? 'punto punto-ok' : 'punto'} aria-hidden="true" />
-              <span>{enVivo ? 'En vivo' : 'Sin conexión'}</span>
+              <span className={enVivo || conectado ? 'punto punto-ok' : 'punto'} aria-hidden="true" />
+              <span>{enVivo || conectado ? 'En vivo' : 'Sin conexión'}</span>
             </div>
-            <Badge count={0} showZero={false}>
+            <Badge count={noLeidas} showZero={false}>
               <Button
                 type="text"
                 className="cabecera-icono"
                 aria-label="Notificaciones"
                 icon={<BellOutlined style={{ fontSize: 18 }} />}
-                onClick={() => navigate('/notificaciones')}
+                onClick={() => {
+                  setNoLeidas(0);
+                  navigate('/notificaciones');
+                }}
               />
             </Badge>
             <div className="quien-chip">

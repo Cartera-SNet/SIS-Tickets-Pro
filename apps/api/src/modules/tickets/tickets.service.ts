@@ -463,18 +463,48 @@ export class TicketsService {
       adjunto: mensaje.adjunto,
     };
     this.tiempo.emitirTicket(ticketId, 'ticket:mensaje', payload);
-    const destinos = new Set<string>();
-    if (ticket.solicitante?.id && ticket.solicitante.id !== actor.id) {
-      destinos.add(ticket.solicitante.id);
-    }
-    const responsableId = (ticket as { responsable?: { id?: string } | null }).responsable?.id;
-    if (responsableId && responsableId !== actor.id) {
-      destinos.add(responsableId);
-    }
+    const destinos = await this.destinosChat(ticketId, actor.id);
     for (const usuarioId of destinos) {
       this.tiempo.emitir(usuarioId, 'ticket:mensaje', payload);
     }
+    await this.avisos
+      .avisar({
+        evento: 'nuevo_mensaje',
+        usuarios: destinos,
+        titulo: `Mensaje en ${ticket.numero}`,
+        cuerpo: contenido.trim().slice(0, 160),
+        clave: () => `msg:${mensaje.id}`,
+      })
+      .catch(() => undefined);
     return payload;
+  }
+
+  /** Solicitante, responsable y admins de la sede (excepto quien escribe). */
+  private async destinosChat(ticketId: string, autorId: string): Promise<string[]> {
+    const ticket = await this.prisma.ticket.findFirst({
+      where: { id: ticketId },
+      select: { solicitanteId: true, responsableId: true, sedeId: true },
+    });
+    if (!ticket) {
+      return [];
+    }
+    const destinos = new Set<string>();
+    if (ticket.solicitanteId !== autorId) {
+      destinos.add(ticket.solicitanteId);
+    }
+    if (ticket.responsableId && ticket.responsableId !== autorId) {
+      destinos.add(ticket.responsableId);
+    }
+    const admins = await this.prisma.usuario.findMany({
+      where: { rol: 'ADMINISTRADOR', activo: true, deletedAt: null },
+      select: { id: true },
+    });
+    for (const admin of admins) {
+      if (admin.id !== autorId) {
+        destinos.add(admin.id);
+      }
+    }
+    return [...destinos];
   }
 
   private validarPermisoAdjunto(ticket: { solicitante: { id: string } }, actor: Principal) {
@@ -592,17 +622,19 @@ export class TicketsService {
       },
     };
     this.tiempo.emitirTicket(ticketId, 'ticket:mensaje', mensajePayload);
-    const destinos = new Set<string>();
-    if (ticket.solicitante?.id && ticket.solicitante.id !== actor.id) {
-      destinos.add(ticket.solicitante.id);
-    }
-    const responsableId = (ticket as { responsable?: { id?: string } | null }).responsable?.id;
-    if (responsableId && responsableId !== actor.id) {
-      destinos.add(responsableId);
-    }
+    const destinos = await this.destinosChat(ticketId, actor.id);
     for (const usuarioId of destinos) {
       this.tiempo.emitir(usuarioId, 'ticket:mensaje', mensajePayload);
     }
+    await this.avisos
+      .avisar({
+        evento: 'nuevo_mensaje',
+        usuarios: destinos,
+        titulo: `Evidencia en ${ticket.numero}`,
+        cuerpo: contenido.slice(0, 160),
+        clave: () => `msg:${mensaje.id}`,
+      })
+      .catch(() => undefined);
 
     this.tiempo.emitirTicket(ticketId, 'ticket:adjunto', { ...adjunto, ticketId, accion: 'agregado' });
     return { ...adjunto, mensaje: mensajePayload, enviadoEnChat: esEquipo || esSolicitante };

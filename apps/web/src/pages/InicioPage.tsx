@@ -9,7 +9,7 @@ import { Button } from 'antd';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ErrorHttp, api } from '../api/http';
-import { conectarTiempoReal } from '../api/tiempo-real';
+import { useTiempoReal } from '../api/tiempo-real';
 import { claseAns, claseNivel, restanteAns } from '../ui/etiquetas';
 
 type Panel = {
@@ -48,6 +48,7 @@ type Kpi = {
 
 export function InicioPage() {
   const navigate = useNavigate();
+  const { on } = useTiempoReal();
   const [panel, setPanel] = useState<Panel | null>(null);
   const [aviso, setAviso] = useState('');
 
@@ -62,13 +63,17 @@ export function InicioPage() {
 
   useEffect(() => {
     cargar();
-    const socket = conectarTiempoReal();
-    socket.on('connect', cargar);
-    socket.on('notificacion', cargar);
+    const offConnect = on('connect', (() => cargar()) as (...args: never[]) => void);
+    const offNotificacion = on('notificacion', (() => cargar()) as (...args: never[]) => void);
+    const offMensaje = on('ticket:mensaje', (() => cargar()) as (...args: never[]) => void);
+    const offCreado = on('ticket:creado', (() => cargar()) as (...args: never[]) => void);
     return () => {
-      socket.close();
+      offConnect();
+      offNotificacion();
+      offMensaje();
+      offCreado();
     };
-  }, []);
+  }, [on]);
 
   const maxCategoria = useMemo(
     () => Math.max(1, ...(panel?.porCategoria.map((fila) => fila.total) ?? [1])),

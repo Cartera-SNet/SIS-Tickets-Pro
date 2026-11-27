@@ -2,7 +2,7 @@ import { Button, Input, Select } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { ErrorHttp, type Sesion, api } from '../api/http';
-import { conectarTiempoReal } from '../api/tiempo-real';
+import { useTiempoReal } from '../api/tiempo-real';
 import {
   ETIQUETA_ESTADO,
   claseAns,
@@ -38,6 +38,7 @@ export function TicketsPage() {
   const sesion = useOutletContext<Sesion | null>();
   const navigate = useNavigate();
   const { mostrar } = useToasts();
+  const { on } = useTiempoReal();
   const [params] = useSearchParams();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [aviso, setAviso] = useState('');
@@ -75,40 +76,37 @@ export function TicketsPage() {
     if (!veBandejaMesa) {
       return;
     }
-    const socket = conectarTiempoReal();
-    const onCreado = (payload: Ticket & { id: string; numero: string; titulo?: string }) => {
-      setTickets((actual) => {
-        if (actual.some((item) => item.id === payload.id)) {
-          return actual;
-        }
-        return [
-          {
-            id: payload.id,
-            numero: payload.numero,
-            titulo: payload.titulo ?? 'Nuevo caso',
-            estado: payload.estado ?? 'NUEVO',
-            estadoNombre: payload.estadoNombre,
-            nivel: payload.nivel ?? 'N1',
-            canal: payload.canal ?? 'WEB',
-            categoria: payload.categoria ?? '',
-            responsableNombre: payload.responsableNombre ?? null,
-            fechaObjetivoSolucion: payload.fechaObjetivoSolucion ?? null,
-          },
-          ...actual,
-        ];
-      });
-      mostrar({
-        titulo: `Nuevo ticket ${payload.numero}`,
-        cuerpo: payload.titulo ?? 'Caso creado',
-        href: `/tickets/${payload.id}`,
-      });
-    };
-    socket.on('ticket:creado', onCreado);
-    return () => {
-      socket.off('ticket:creado', onCreado);
-      socket.close();
-    };
-  }, [veBandejaMesa, mostrar]);
+    return on(
+      'ticket:creado',
+      ((payload: Ticket & { id: string; numero: string; titulo?: string }) => {
+        setTickets((actual) => {
+          if (actual.some((item) => item.id === payload.id)) {
+            return actual;
+          }
+          return [
+            {
+              id: payload.id,
+              numero: payload.numero,
+              titulo: payload.titulo ?? 'Nuevo caso',
+              estado: payload.estado ?? 'NUEVO',
+              estadoNombre: payload.estadoNombre,
+              nivel: payload.nivel ?? 'N1',
+              canal: payload.canal ?? 'WEB',
+              categoria: payload.categoria ?? '',
+              responsableNombre: payload.responsableNombre ?? null,
+              fechaObjetivoSolucion: payload.fechaObjetivoSolucion ?? null,
+            },
+            ...actual,
+          ];
+        });
+        mostrar({
+          titulo: `Nuevo ticket ${payload.numero}`,
+          cuerpo: payload.titulo ?? 'Caso creado',
+          href: `/tickets/${payload.id}`,
+        });
+      }) as (...args: never[]) => void,
+    );
+  }, [veBandejaMesa, mostrar, on]);
 
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase();

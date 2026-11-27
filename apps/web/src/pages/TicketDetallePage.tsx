@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { consultarEvidenciaBase64, descargarEvidenciaBase64, subirEvidenciaBase64 } from '../api/evidencias';
 import { ErrorHttp, type Sesion, api } from '../api/http';
-import { conectarTiempoReal } from '../api/tiempo-real';
+import { useTiempoReal } from '../api/tiempo-real';
 import { claseAns, claseEstado, claseNivel, restanteAns } from '../ui/etiquetas';
 import { useToasts } from '../ui/Toasts';
 
@@ -69,6 +69,7 @@ export function TicketDetallePage() {
   const navigate = useNavigate();
   const sesion = useOutletContext<Sesion | null>();
   const { mostrar } = useToasts();
+  const { on, unirseTicket, salirTicket, marcarChatEnFoco, socket } = useTiempoReal();
   const [ticket, setTicket] = useState<Detalle | null>(null);
   const [aviso, setAviso] = useState('');
   const [texto, setTexto] = useState('');
@@ -78,7 +79,6 @@ export function TicketDetallePage() {
   const [calificacion, setCalificacion] = useState<number>(5);
   const [comentarioRechazo, setComentarioRechazo] = useState('');
   const [tecnicos, setTecnicos] = useState<{ id: string; nombre: string; niveles: string[] }[]>([]);
-  const socketRef = useRef<ReturnType<typeof conectarTiempoReal> | null>(null);
   const hiloRef = useRef<HTMLDivElement | null>(null);
   const pestanaRef = useRef<'info' | 'hilo' | 'evidencias' | 'seguimiento'>('info');
   const [escribiendo, setEscribiendo] = useState(false);
@@ -127,40 +127,45 @@ export function TicketDetallePage() {
   }, [id]);
 
   useEffect(() => {
-    const socket = conectarTiempoReal();
-    socketRef.current = socket;
-    const unirse = () => socket.emit('ticket:unirse', id);
-    unirse();
-    socket.on('connect', unirse);
-    socket.on('escribiendo', () => {
+    if (!id) {
+      return;
+    }
+    unirseTicket(id);
+    const offEscribiendo = on('escribiendo', ((payload: { ticketId?: string }) => {
+      if (payload?.ticketId && payload.ticketId !== id) {
+        return;
+      }
       setEscribiendo(true);
       window.setTimeout(() => setEscribiendo(false), 2000);
-    });
-    socket.on('ticket:mensaje', (mensaje: Mensaje & { ticketId?: string }) => {
+    }) as (...args: never[]) => void);
+    const offMensaje = on('ticket:mensaje', ((mensaje: Mensaje & { ticketId?: string; fecha?: string | Date }) => {
       if (mensaje.ticketId && mensaje.ticketId !== id) {
         return;
       }
+      const normalizado: Mensaje = {
+        ...mensaje,
+        fecha: typeof mensaje.fecha === 'string' ? mensaje.fecha : new Date(mensaje.fecha ?? Date.now()).toISOString(),
+      };
       setTicket((actual) => {
         if (!actual) {
           return actual;
         }
-        if (actual.mensajes.some((item) => item.id === mensaje.id)) {
+        if (actual.mensajes.some((item) => item.id === normalizado.id)) {
           return actual;
         }
-        return { ...actual, mensajes: [...actual.mensajes, mensaje] };
+        return { ...actual, mensajes: [...actual.mensajes, normalizado] };
       });
-      const chatEnFoco = pestanaRef.current === 'hilo' && document.visibilityState === 'visible';
-      if (!chatEnFoco && mensaje.autorTipo !== 'USUARIO') {
-        mostrar({
-          titulo: `Mensaje · ${mensaje.autor}`,
-          cuerpo: mensaje.contenido.slice(0, 120),
-          href: `/tickets/${id}`,
-        });
+      if (normalizado.adjunto) {
+        miniaturasPedidas.current.delete(normalizado.adjunto.id);
       }
-    });
-    socket.on(
+      // Si no está en la pestaña Conversación, avisar con toast (AppLayout también lo hace si el chat no está en foco).
+      if (pestanaRef.current !== 'hilo') {
+        setPestana('hilo');
+      }
+    }) as (...args: never[]) => void);
+    const offAdjunto = on(
       'ticket:adjunto',
-      (evento: Adjunto & { ticketId?: string; accion: 'agregado' | 'eliminado' }) => {
+      ((evento: Adjunto & { ticketId?: string; accion: 'agregado' | 'eliminado' }) => {
         if (evento.ticketId && evento.ticketId !== id) {
           return;
         }
@@ -178,15 +183,21 @@ export function TicketDetallePage() {
             ...actual,
             adjuntos: [
               ...actual.adjuntos,
-              { id: evento.id, nombre: evento.nombre, tamano: evento.tamano, mime: evento.mime, subidoPorId: evento.subidoPorId },
+              {
+                id: evento.id,
+                nombre: evento.nombre,
+                tamano: evento.tamano,
+                mime: evento.mime,
+                subidoPorId: evento.subidoPorId,
+              },
             ],
           };
         });
-      },
+      }) as (...args: never[]) => void,
     );
-    socket.on(
+    const offEstado = on(
       'ticket:estado',
-      (evento: { ticketId?: string; estado?: string; estadoNombre?: string; nivel?: string; responsableId?: string }) => {
+      ((evento: { ticketId?: string; estado?: string; estadoNombre?: string; nivel?: string }) => {
         if (evento.ticketId && evento.ticketId !== id) {
           return;
         }
@@ -201,14 +212,34 @@ export function TicketDetallePage() {
             nivel: evento.nivel ?? actual.nivel,
           };
         });
-        cargar();
-      },
+      }) as (...args: never[]) => void,
     );
     return () => {
-      socket.off('connect', unirse);
-      socket.close();
+      offEscribiendo();
+      offMensaje();
+      offAdjunto();
+      offEstado();
+      salirTicket(id);
+      marcarChatEnFoco(null);
     };
-  }, [id, mostrar]);
+  }, [id, on, unirseTicket, salirTicket, marcarChatEnFoco]);
+
+  useEffect(() => {
+    if (pestana === 'hilo' && document.visibilityState === 'visible') {
+      marcarChatEnFoco(id);
+    } else {
+      marcarChatEnFoco(null);
+    }
+    const onVis = () => {
+      if (pestanaRef.current === 'hilo' && document.visibilityState === 'visible') {
+        marcarChatEnFoco(id);
+      } else {
+        marcarChatEnFoco(null);
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [pestana, id, marcarChatEnFoco]);
 
   useEffect(() => {
     if (pestana !== 'seguimiento' && pestana !== 'info') {
@@ -662,7 +693,7 @@ export function TicketDetallePage() {
             value={texto}
             onChange={(evento) => {
               setTexto(evento.target.value);
-              socketRef.current?.emit('escribiendo', id);
+              socket?.emit('escribiendo', id);
             }}
             onPressEnter={(evento) => {
               if (!evento.shiftKey) {
