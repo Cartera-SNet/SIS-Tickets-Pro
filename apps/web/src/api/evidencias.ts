@@ -34,8 +34,52 @@ export function archivoABase64(archivo: File): Promise<{ nombre: string; mime: s
   });
 }
 
-/** Sube evidencia a Railway/Neon enviando JSON con base64. */
-export async function subirEvidenciaBase64(
+async function leerError(respuesta: Response): Promise<string> {
+  try {
+    const cuerpo = (await respuesta.json()) as { error?: { message?: string } };
+    return cuerpo?.error?.message ?? `La solicitud respondió ${respuesta.status}`;
+  } catch {
+    return `La solicitud respondió ${respuesta.status}`;
+  }
+}
+
+/** Preferido para el chat: multipart (no se queda corto el límite JSON). */
+export async function subirEvidenciaMultipart(
+  ticketId: string,
+  archivo: File,
+  mensaje?: string,
+): Promise<{ id: string; nombre: string; tamano: number; mime: string; subidoPorId?: string | null; mensaje?: unknown }> {
+  const datos = new FormData();
+  datos.append('archivo', archivo, archivo.name);
+  if (mensaje?.trim()) {
+    datos.append('mensaje', mensaje.trim());
+  }
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  const csrf = tokenCsrf();
+  if (csrf) {
+    headers['x-csrf-token'] = csrf;
+  }
+  const respuesta = await fetch(`/api/tickets/${ticketId}/adjuntos/multipart`, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+    body: datos,
+  });
+  if (!respuesta.ok) {
+    throw new ErrorHttp(respuesta.status, await leerError(respuesta));
+  }
+  return (await respuesta.json()) as {
+    id: string;
+    nombre: string;
+    tamano: number;
+    mime: string;
+    subidoPorId?: string | null;
+    mensaje?: unknown;
+  };
+}
+
+/** Respaldo JSON+base64 (archivos pequeños o si multipart falla). */
+export async function subirEvidenciaJson(
   ticketId: string,
   archivo: File,
   mensaje?: string,
@@ -50,6 +94,30 @@ export async function subirEvidenciaBase64(
       mensaje: mensaje || undefined,
     },
   });
+}
+
+/** Sube evidencia al chat/ticket: multipart primero; si falla, base64. */
+export async function subirEvidenciaBase64(
+  ticketId: string,
+  archivo: File,
+  mensaje?: string,
+): Promise<{ id: string; nombre: string; tamano: number; mime: string; subidoPorId?: string | null; mensaje?: unknown }> {
+  try {
+    return await subirEvidenciaMultipart(ticketId, archivo, mensaje);
+  } catch (error) {
+    if (error instanceof ErrorHttp && (error.status === 404 || error.status === 405)) {
+      return subirEvidenciaJson(ticketId, archivo, mensaje);
+    }
+    // Si el proxy rechaza multipart, intenta base64 (ya con límite 8mb en API).
+    if (error instanceof ErrorHttp && error.status >= 500) {
+      try {
+        return await subirEvidenciaJson(ticketId, archivo, mensaje);
+      } catch {
+        throw error;
+      }
+    }
+    throw error;
+  }
 }
 
 /** Consulta la evidencia en Neon vía Railway y la devuelve como data URL. */

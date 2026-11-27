@@ -66,13 +66,23 @@ export class FiltroExcepciones implements ExceptionFilter {
       }
     } else {
       const texto = exception instanceof Error ? exception.message : 'error';
-      this.logger.error(
-        JSON.stringify({
-          msg: 'error_no_controlado',
-          requestId,
-          detalle: redactarSecretos(texto),
-        }),
-      );
+      const demasiadoGrande =
+        /entity too large|payload too large|request entity too large/i.test(texto) ||
+        (exception as { type?: string; status?: number })?.type === 'entity.too.large' ||
+        (exception as { status?: number })?.status === 413;
+      if (demasiadoGrande) {
+        status = HttpStatus.PAYLOAD_TOO_LARGE;
+        code = 'validation_error';
+        message = 'El archivo es demasiado grande. Máximo 5 MB.';
+      } else {
+        this.logger.error(
+          JSON.stringify({
+            msg: 'error_no_controlado',
+            requestId,
+            detalle: redactarSecretos(texto),
+          }),
+        );
+      }
     }
 
     const cuerpo: CuerpoError = {

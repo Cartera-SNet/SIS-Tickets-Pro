@@ -561,7 +561,7 @@ export class TicketsService {
     });
 
     // Chat estilo WhatsApp: la evidencia viaja siempre como mensaje (con o sin texto).
-    const contenido = respuesta || `📎 ${adjunto.nombre}`;
+    const contenido = respuesta || `Evidencia: ${adjunto.nombre}`;
     const autorTipo = esEquipo ? 'TECNICO' : 'USUARIO';
     const mensaje = await this.prisma.mensaje.create({
       data: {

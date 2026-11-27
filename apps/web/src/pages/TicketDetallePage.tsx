@@ -576,7 +576,10 @@ export function TicketDetallePage() {
       mensaje.autorTipo === 'TECNICO' || mensaje.autorTipo === 'AGENTE_IA' || mensaje.autorTipo === 'SISTEMA';
     const adjunto = mensaje.adjunto;
     const esSoloCaptionArchivo =
-      adjunto && (mensaje.contenido === `📎 ${adjunto.nombre}` || mensaje.contenido === adjunto.nombre);
+      adjunto &&
+      (mensaje.contenido === `Evidencia: ${adjunto.nombre}` ||
+        mensaje.contenido === `📎 ${adjunto.nombre}` ||
+        mensaje.contenido === adjunto.nombre);
     return (
       <div className={`hilo-msg ${delSoporte ? 'salida' : 'entrada'}`} key={mensaje.id}>
         <header>
@@ -603,7 +606,12 @@ export function TicketDetallePage() {
             Ver imagen: {adjunto.nombre}
           </button>
         ) : null}
-        {!esSoloCaptionArchivo && mensaje.contenido ? <div className="hilo-texto">{mensaje.contenido}</div> : null}
+        {!esSoloCaptionArchivo &&
+        mensaje.contenido &&
+        mensaje.contenido !== `Evidencia: ${adjunto?.nombre ?? ''}` &&
+        mensaje.contenido !== `📎 ${adjunto?.nombre ?? ''}` ? (
+          <div className="hilo-texto">{mensaje.contenido}</div>
+        ) : null}
       </div>
     );
   }
@@ -677,7 +685,9 @@ export function TicketDetallePage() {
         </div>
         {puedeAdjuntarChat ? (
           <p className="hilo-composer-ayuda">
-            Como WhatsApp: puedes enviar solo la imagen, o imagen + texto. El solicitante la ve en el chat al instante.
+            {esMio
+              ? 'Como WhatsApp: adjunta una foto o PDF y envíala (el texto es opcional). Soporte la ve al instante.'
+              : 'Como WhatsApp: adjunta una evidencia y envíala al solicitante (el texto es opcional). Llega al chat al instante.'}
           </p>
         ) : null}
       </div>

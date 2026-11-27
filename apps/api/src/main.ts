@@ -24,7 +24,14 @@ async function bootstrap(): Promise<void> {
   for (const aviso of avisosProduccion(entorno)) {
     console.warn(`[aviso] ${aviso}`);
   }
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true, rawBody: true });
+  // bodyParser:false + useBodyParser: sube el límite (default 100kb) para evidencias base64.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+    rawBody: true,
+    bodyParser: false,
+  });
+  app.useBodyParser('json', { limit: '8mb' });
+  app.useBodyParser('urlencoded', { limit: '8mb', extended: true });
 
   // Detrás del proxy de Railway la IP real llega en X-Forwarded-For.
   const saltos = Number(process.env.TRUST_PROXY_HOPS ?? (process.env.RAILWAY_ENVIRONMENT_NAME ? 1 : 0));

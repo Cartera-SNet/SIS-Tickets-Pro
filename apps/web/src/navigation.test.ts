@@ -19,12 +19,13 @@ describe('navegación y tema', () => {
     ]);
   });
 
-  it('al solicitante solo le deja solicitar y seguir sus casos', () => {
+  it('al solicitante le deja solicitar, seguir casos y usar el agente', () => {
     const permisos = ['tickets.crear', 'tickets.ver_propios', 'tickets.calificar', 'actas.firmar'];
     expect(menuVisible(permisos).map((item) => item.etiqueta)).toEqual([
       'Inicio',
       'Tickets',
       'Nuevo ticket',
+      'Agente IA (N1)',
       'Notificaciones',
       'Manual',
     ]);
