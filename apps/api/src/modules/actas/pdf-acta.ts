@@ -22,16 +22,18 @@ export async function construirPdf(entrada: {
   doc.fillColor('#111111').fontSize(11);
   const b = entrada.bloques;
   const lineas = [
-    `${b.identificacion.numero} · versión ${b.identificacion.version} · ${b.identificacion.referencia}`,
-    `${b.personas.solicitante} · ${b.personas.sede} · ${b.personas.ubicacion}`,
-    `Equipo ${b.equipo.placa ?? 'sin placa'} · ${b.equipo.serial ?? 'sin serial'}`,
-    `Apertura ${b.fechas.apertura} · solución ${b.fechas.solucion ?? 'pendiente'}`,
-    `Diagnóstico: ${b.trabajo.diagnostico}`,
-    `Actividades: ${b.trabajo.actividades}`,
+    `Ticket ${b.identificacion.referencia}${b.identificacion.ticketId ? ` · ID ${b.identificacion.ticketId}` : ''} · Acta ${b.identificacion.numero} v${b.identificacion.version}`,
+    `Solicitante: ${b.personas.solicitante} · Técnico: ${b.personas.tecnico ?? '—'}`,
+    `${b.personas.sede} · ${b.personas.ubicacion}`,
+    `Equipo ${b.equipo.nombre ?? b.equipo.placa ?? 'sin nombre'} · Serial ${b.equipo.serial ?? 'sin serial'}`,
+    `Creación ${b.fechas.apertura} · Atención ${b.fechas.atencion ?? '—'} · Solución ${b.fechas.solucion ?? 'pendiente'} · Cierre ${b.fechas.cierre ?? '—'}`,
+    `Problema / diagnóstico: ${b.trabajo.diagnostico}`,
+    `Solución / actividades: ${b.trabajo.actividades}`,
     `Repuestos: ${b.trabajo.repuestos || 'ninguno'}`,
     `Estado final: ${b.trabajo.estadoFinal}`,
+    `Evidencias: ${(b.evidencias ?? []).join(', ') || 'ninguna'}`,
+    `Confirmación del solicitante: ${b.confirmacionSolicitante ?? 'pendiente'}`,
     `Observaciones: ${b.observaciones || 'sin observaciones'}`,
-    `Checklist: ${b.checklist.length} ítems`,
   ];
   let y = 100;
   for (const linea of lineas) {

@@ -8,22 +8,28 @@ export function validarEscalamiento(entrada: {
   acciones: string;
   responsableId: string;
   areaCompleta: boolean;
-}): { ok: true; devolucion: boolean } | { ok: false; mensaje: string } {
+}): { ok: true; devolucion: false } | { ok: false; mensaje: string } {
   if (!entrada.motivo.trim() || !entrada.acciones.trim() || !entrada.responsableId.trim()) {
-    return { ok: false, mensaje: 'Para escalar o devolver hacen falta el motivo, las acciones y el responsable.' };
+    return { ok: false, mensaje: 'Para escalar hacen falta el motivo, las acciones realizadas y el responsable asignado.' };
   }
   const actual = ORDEN[entrada.nivelActual];
   const destino = ORDEN[entrada.nivelDestino];
   if (actual === destino) {
     return { ok: false, mensaje: 'El caso ya está en ese nivel.' };
   }
+  if (destino < actual) {
+    return { ok: false, mensaje: 'Solo se permite escalar a un nivel superior. La devolución ya no está disponible.' };
+  }
+  if (entrada.nivelActual === 'N2' && entrada.nivelDestino !== 'N3') {
+    return { ok: false, mensaje: 'Desde N2 solo se puede escalar a N3.' };
+  }
   if (destino > actual + 1 && !entrada.areaCompleta) {
     return { ok: false, mensaje: 'Solo se salta de N1 a N3 cuando el área completa está afectada.' };
   }
-  if (destino > actual && entrada.nivelActual === 'N3') {
+  if (entrada.nivelActual === 'N3') {
     return { ok: false, mensaje: 'N3 no tiene un nivel superior.' };
   }
-  return { ok: true, devolucion: destino < actual };
+  return { ok: true, devolucion: false };
 }
 
 export function agentePuedeCerrar(tieneEscalamientos: boolean): boolean {

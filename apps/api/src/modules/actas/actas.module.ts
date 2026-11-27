@@ -8,6 +8,7 @@ import { dondeTickets, type Principal, type RolAcceso } from '../auth/reglas-acc
 import { SesionGuard } from '../auth/sesion.guard';
 import { AvisosService } from '../notificaciones/avisos.service';
 import { NotificacionesModule } from '../notificaciones/notificaciones.module';
+import { TiempoRealGateway } from '../notificaciones/tiempo-real.gateway';
 import { Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { FirmaController, PublicoController } from './firma.controller';
@@ -59,6 +60,7 @@ export class ActasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly avisos: AvisosService,
+    private readonly tiempo: TiempoRealGateway,
   ) {}
 
   async generar(actor: Principal, entrada: GenerarActaDto) {
@@ -113,9 +115,12 @@ export class ActasService {
       where: { id: ticketId, ...(dondeTickets(actor) as Prisma.TicketWhereInput) },
       include: {
         solicitante: { select: { id: true, nombre: true } },
+        responsable: { select: { id: true, nombre: true } },
         sede: { select: { nombre: true } },
         ubicacion: { select: { nombre: true } },
-        equipo: { select: { placa: true, serial: true } },
+        equipo: { select: { placa: true, serial: true, tipo: true } },
+        adjuntos: { select: { nombre: true }, orderBy: { createdAt: 'asc' } },
+        historial: { where: { tipo: 'confirmacion' }, orderBy: { fecha: 'desc' }, take: 1 },
         actas: { orderBy: { version: 'desc' }, take: 1 },
       },
     });
@@ -137,23 +142,35 @@ export class ActasService {
     }
     const version = previa ? previa.version + 1 : 1;
     const numero = previa?.numero ?? (await this.siguiente('AC'));
+    const confirmacion = ticket.historial[0];
     const contenido = armarBloques({
       numero,
       version,
       referencia: ticket.numero,
+      ticketId: ticket.id,
       solicitante: ticket.solicitante.nombre,
+      tecnico: ticket.responsable?.nombre ?? 'Sin asignar',
       sede: ticket.sede?.nombre ?? 'Sin sede',
       ubicacion: ticket.ubicacion?.nombre ?? 'Sin ubicación',
-      placa: ticket.equipo?.placa ?? null,
-      serial: ticket.equipo?.serial ?? null,
+      placa: ticket.equipoNombre ?? ticket.equipo?.placa ?? ticket.equipo?.tipo ?? null,
+      serial: ticket.equipoSerial ?? ticket.equipo?.serial ?? null,
+      nombreEquipo: ticket.equipoNombre ?? ticket.equipo?.tipo ?? null,
       apertura: ticket.fechaCreacion,
+      atencion: ticket.responsableId ? ticket.updatedAt : null,
       solucion: ticket.fechaResolucion,
-      diagnostico: entrada.diagnostico,
-      actividades: entrada.actividades,
+      cierre: ticket.fechaCierre,
+      diagnostico: entrada.diagnostico || ticket.descripcion,
+      actividades: entrada.actividades || ticket.solucionAplicada || '',
       repuestos: entrada.repuestos ?? '',
       estadoFinal: entrada.estadoFinal,
       checklist: [],
       observaciones: entrada.observaciones ?? '',
+      evidencias: ticket.adjuntos.map((item) => item.nombre),
+      confirmacionSolicitante: confirmacion
+        ? `Confirmado el ${confirmacion.fecha.toISOString()}`
+        : ticket.estado === 'RESUELTO'
+          ? 'Pendiente de confirmación del solicitante'
+          : null,
     });
     const acta = await this.prisma.acta.create({
       data: {
@@ -169,7 +186,7 @@ export class ActasService {
         ticketId: ticket.id,
         usuarioId: actor.id,
         tipo: 'acta_generada',
-        datosNuevos: { numero, version },
+        datosNuevos: { numero, version, ticketId: ticket.id },
       },
     });
     await this.avisos.avisar({
@@ -179,6 +196,17 @@ export class ActasService {
       cuerpo: 'El documento está listo. La firma llega en el siguiente paso.',
       clave: () => `acta_pendiente:${acta.id}`,
     });
+    const payload = {
+      ticketId: ticket.id,
+      actaId: acta.id,
+      numero: acta.numero,
+      estado: 'PENDIENTE_DE_FIRMA',
+    };
+    this.tiempo.emitirTicket(ticket.id, 'ticket:estado', payload);
+    this.tiempo.emitir(ticket.solicitante.id, 'ticket:estado', payload);
+    if (ticket.responsableId) {
+      this.tiempo.emitir(ticket.responsableId, 'ticket:estado', payload);
+    }
     return { id: acta.id, numero, version, estado: acta.estado, contenido };
   }
 

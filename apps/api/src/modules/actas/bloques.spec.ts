@@ -28,6 +28,8 @@ describe('bloques del acta', () => {
       'trabajo',
       'checklist',
       'observaciones',
+      'evidencias',
+      'confirmacionSolicitante',
       'firmas',
     ]);
     expect(bloques.firmas).toEqual([]);

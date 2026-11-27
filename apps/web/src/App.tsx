@@ -3,6 +3,7 @@ import esES from 'antd/locale/es_ES';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { RequireSession } from './auth/RequireSession';
 import { AppLayout } from './layout/AppLayout';
+import { ToastProvider } from './ui/Toasts';
 import { AccesoPage } from './pages/AccesoPage';
 import { ConfiguracionPage } from './pages/ConfiguracionPage';
 import { InicioPage } from './pages/InicioPage';
@@ -51,6 +52,7 @@ export function App() {
       }}
     >
       <BrowserRouter>
+        <ToastProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/acceso" element={<AccesoPage />} />
@@ -84,6 +86,7 @@ export function App() {
             </Route>
           </Route>
         </Routes>
+        </ToastProvider>
       </BrowserRouter>
     </ConfigProvider>
   );

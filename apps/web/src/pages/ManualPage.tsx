@@ -12,6 +12,7 @@ const SECCIONES: Seccion[] = [
     quien: 'Solicitante',
     pasos: [
       'Describe el problema con claridad: qué pasó y en qué equipo o sede.',
+      'El campo Equipo puede precargarse con el script Windows «Obtener datos del equipo» (nombre y serial). Sigue siendo editable.',
       'Puedes adjuntar evidencias (imágenes, PDF o texto) al crearlo.',
       'Al enviar, recibes un número de ticket para hacer seguimiento.',
     ],
@@ -20,10 +21,11 @@ const SECCIONES: Seccion[] = [
     titulo: 'Tickets',
     quien: 'Todos',
     pasos: [
-      'Muestra la bandeja de casos. El solicitante ve los suyos; el equipo ve los de su sede.',
-      'Entra a un ticket para ver el detalle, la conversación, las evidencias y el historial.',
-      'En el detalle, la pestaña «Evidencias» permite ver y agregar archivos; la conversación permite escribir con soporte.',
-      'Cuando soporte resuelve el caso, el solicitante lo confirma o lo rechaza desde el detalle.',
+      'Muestra la bandeja de casos. El solicitante ve los suyos; el equipo ve los de su sede (se actualiza en vivo al crear).',
+      'Entra a un ticket para ver el detalle, la conversación, las evidencias de avance y el historial.',
+      'Escalar exige motivo, acciones realizadas y asignar un técnico o al administrador (desde N2 solo a N3).',
+      'El técnico avisa la solución; el solicitante confirma o indica que aún no está solucionada. Sin respuesta en 24 h se cierra.',
+      'El acta de cierre (N2/N3) se genera desde la pestaña Seguimiento con los datos ya registrados.',
     ],
   },
   {
@@ -33,8 +35,11 @@ const SECCIONES: Seccion[] = [
   },
   {
     titulo: 'Agente IA (N1)',
-    quien: 'Técnico / Administrador',
-    pasos: ['Muestra lo que el agente atendió por WhatsApp y los casos que pasó a una persona.'],
+    quien: 'Todos',
+    pasos: [
+      'El ícono flotante del agente está disponible para Solicitante, Técnicos y Administrador.',
+      'Úsalo para consultar problemas de equipo, red o apps básicas. Los técnicos también ven la supervisión de WhatsApp.',
+    ],
   },
   {
     titulo: 'Mantenimiento preventivo',
@@ -44,7 +49,19 @@ const SECCIONES: Seccion[] = [
   {
     titulo: 'Actas de cierre',
     quien: 'Técnico / Administrador',
-    pasos: ['Genera el acta de un caso resuelto, la envía a firma y guarda el PDF.', 'Cualquier persona puede verificar un acta en la página «Verificar» con su código.'],
+    pasos: [
+      'Genera el acta desde el seguimiento del ticket: incluye ID/consecutivo, equipo, fechas, solución, evidencias y confirmación.',
+      'Cualquier persona puede verificar un acta en la página «Verificar» con su código.',
+    ],
+  },
+  {
+    titulo: 'Script Windows · datos del equipo',
+    quien: 'Solicitante / TI',
+    pasos: [
+      'Descarga /scripts/obtener-equipo-sis.ps1 desde Nuevo ticket.',
+      'Ejecútalo con PowerShell; abre el formulario con ?equipo= y ?serial= precargados.',
+      'Documentación: docs/equipo-script-windows.md',
+    ],
   },
   {
     titulo: 'Notificaciones',

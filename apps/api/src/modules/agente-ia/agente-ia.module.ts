@@ -1,22 +1,37 @@
-import { Controller, Get, Module, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Module, Param, ParseUUIDPipe, Post, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import { TicketsModule } from '../tickets/tickets.module';
 import { AuthModule } from '../auth/auth.module';
 import { CualquierPermiso, PermisoGuard } from '../auth/permiso.guard';
 import { SesionGuard } from '../auth/sesion.guard';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { Request } from 'express';
-import { Req } from '@nestjs/common';
 import { AgenteService } from './agente.service';
 
 @Controller('api/agente')
 @UseGuards(SesionGuard, PermisoGuard)
 export class AgenteSupervisionController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly agente: AgenteService,
+  ) {}
+
+  @Post('web')
+  @CualquierPermiso()
+  async web(@Req() peticion: Request, @Body() cuerpo: { texto?: string }) {
+    const texto = typeof cuerpo?.texto === 'string' ? cuerpo.texto.trim() : '';
+    if (texto.length < 2) {
+      return { respuesta: 'Cuéntame el problema del equipo o la red (sin datos de pacientes).' };
+    }
+    const respuesta = await this.agente.atender(peticion.usuario!.id, texto, false);
+    return { respuesta };
+  }
 
   @Get('conversaciones')
-  @CualquierPermiso('tickets.ver_sede')
-  async listar() {
+  @CualquierPermiso()
+  async listar(@Req() peticion: Request) {
+    const esMesa = peticion.usuario?.rol === 'TECNICO' || peticion.usuario?.rol === 'ADMINISTRADOR';
     const filas = await this.prisma.conversacionIa.findMany({
+      where: esMesa ? undefined : { usuarioId: peticion.usuario!.id },
       orderBy: { fecha: 'desc' },
       take: 40,
       include: {
@@ -65,7 +80,7 @@ export class AgenteSupervisionController {
   }
 
   @Post('conversaciones/:id/tomar')
-  @CualquierPermiso('tickets.ver_sede')
+  @CualquierPermiso('tickets.ver_sede', 'tickets.asignar')
   async tomar(@Param('id', ParseUUIDPipe) id: string, @Req() peticion: Request) {
     const actual = await this.prisma.conversacionIa.findUnique({ where: { id } });
     if (!actual) {

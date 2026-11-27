@@ -14,11 +14,13 @@ import {
   UnorderedListOutlined,
 } from '@ant-design/icons';
 import { Avatar, Badge, Button, Input, Layout, Menu } from 'antd';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import { api, obtenerJson, type Sesion } from '../api/http';
+import { conectarTiempoReal } from '../api/tiempo-real';
 import { MarcaSis } from '../components/MarcaSis';
 import { menuVisible, rutaPermitida } from '../navigation';
+import { useToasts } from '../ui/Toasts';
 
 const { Header, Sider, Content } = Layout;
 
@@ -42,20 +44,37 @@ const ETIQUETA_ROL: Record<string, string> = {
   ADMINISTRADOR: 'Administrador',
 };
 
+type BurbujaFab = { id: string; lado: 'usuario' | 'agente'; texto: string };
+
 export function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const sesion = useOutletContext<Sesion | null>();
+  const { mostrar } = useToasts();
   const [enVivo, setEnVivo] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [chatAbierto, setChatAbierto] = useState(false);
-  const puedeAgente = rutaPermitida('/agente', sesion?.permisos ?? []);
+  const [textoAgente, setTextoAgente] = useState('');
+  const [enviandoAgente, setEnviandoAgente] = useState(false);
+  const [hiloAgente, setHiloAgente] = useState<BurbujaFab[]>([
+    {
+      id: 'bienvenida',
+      lado: 'agente',
+      texto: 'Hola. Cuéntame el problema del equipo, la red o una app básica (sin datos sensibles).',
+    },
+  ]);
+  const chatAbiertoRef = useRef(false);
+  const rutaRef = useRef(location.pathname);
+  chatAbiertoRef.current = chatAbierto;
+  rutaRef.current = location.pathname;
+
   const iniciales = (sesion?.nombre ?? 'IN')
     .split(' ')
     .slice(0, 2)
     .map((parte) => parte[0])
     .join('')
     .toUpperCase();
+  const esMesa = sesion?.rol === 'TECNICO' || sesion?.rol === 'ADMINISTRADOR';
 
   useEffect(() => {
     let activo = true;
@@ -80,6 +99,77 @@ export function AppLayout() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!sesion?.id) {
+      return;
+    }
+    const socket = conectarTiempoReal();
+    const onMensaje = (payload: { ticketId?: string; autor?: string; contenido?: string; autorTipo?: string }) => {
+      const ticketId = payload.ticketId;
+      if (!ticketId) {
+        return;
+      }
+      const enEsteTicket = rutaRef.current === `/tickets/${ticketId}`;
+      const chatTicketFoco = enEsteTicket && document.visibilityState === 'visible';
+      if (chatTicketFoco || chatAbiertoRef.current) {
+        return;
+      }
+      if (payload.autorTipo === 'USUARIO' && !esMesa) {
+        return;
+      }
+      mostrar({
+        titulo: `Mensaje · ${payload.autor ?? 'Chat'}`,
+        cuerpo: payload.contenido?.slice(0, 120) ?? 'Nuevo mensaje',
+        href: `/tickets/${ticketId}`,
+      });
+    };
+    const onAsignado = (payload: { ticketId?: string; numero?: string }) => {
+      if (!payload.ticketId) {
+        return;
+      }
+      mostrar({
+        titulo: `${payload.numero ?? 'Ticket'} asignado`,
+        cuerpo: 'Te asignaron un caso para atención.',
+        href: `/tickets/${payload.ticketId}`,
+      });
+    };
+    const onResuelto = (payload: { ticketId?: string; numero?: string }) => {
+      if (!payload.ticketId) {
+        return;
+      }
+      mostrar({
+        titulo: `${payload.numero ?? 'Ticket'} solucionado`,
+        cuerpo: 'Confirma si tu solicitud ya está resuelta.',
+        href: `/tickets/${payload.ticketId}`,
+      });
+    };
+    const onCreado = (payload: { id?: string; ticketId?: string; numero?: string; titulo?: string }) => {
+      const id = payload.id ?? payload.ticketId;
+      if (!id || !esMesa) {
+        return;
+      }
+      if (rutaRef.current.startsWith('/tickets')) {
+        return;
+      }
+      mostrar({
+        titulo: `Nuevo ticket ${payload.numero ?? ''}`.trim(),
+        cuerpo: payload.titulo ?? 'Caso creado',
+        href: `/tickets/${id}`,
+      });
+    };
+    socket.on('ticket:mensaje', onMensaje);
+    socket.on('ticket:asignado', onAsignado);
+    socket.on('ticket:resuelto', onResuelto);
+    socket.on('ticket:creado', onCreado);
+    return () => {
+      socket.off('ticket:mensaje', onMensaje);
+      socket.off('ticket:asignado', onAsignado);
+      socket.off('ticket:resuelto', onResuelto);
+      socket.off('ticket:creado', onCreado);
+      socket.close();
+    };
+  }, [sesion?.id, esMesa, mostrar]);
+
   function buscar() {
     const texto = busqueda.trim();
     if (!texto) {
@@ -87,6 +177,33 @@ export function AppLayout() {
       return;
     }
     navigate(`/tickets?q=${encodeURIComponent(texto)}`);
+  }
+
+  async function enviarAgente() {
+    const texto = textoAgente.trim();
+    if (texto.length < 2 || enviandoAgente) {
+      return;
+    }
+    setTextoAgente('');
+    setHiloAgente((actual) => [...actual, { id: `u-${Date.now()}`, lado: 'usuario', texto }]);
+    setEnviandoAgente(true);
+    try {
+      const cuerpo = await api<{ respuesta: string }>('/api/agente/web', {
+        method: 'POST',
+        body: { texto },
+      });
+      setHiloAgente((actual) => [
+        ...actual,
+        { id: `a-${Date.now()}`, lado: 'agente', texto: cuerpo.respuesta || 'Sin respuesta del agente.' },
+      ]);
+    } catch {
+      setHiloAgente((actual) => [
+        ...actual,
+        { id: `e-${Date.now()}`, lado: 'agente', texto: 'No pude responder ahora. Intenta de nuevo en un momento.' },
+      ]);
+    } finally {
+      setEnviandoAgente(false);
+    }
   }
 
   return (
@@ -188,14 +305,14 @@ export function AppLayout() {
         </Content>
       </Layout>
 
-      {puedeAgente && location.pathname !== '/agente' && (
+      {sesion && location.pathname !== '/agente' && (
         <>
           {chatAbierto && (
-            <aside className="chat-flotante" aria-label="Asistente de la mesa">
+            <aside className="chat-flotante" aria-label="Agente web AI">
               <header>
                 <div>
                   <strong>Agente IA · N1</strong>
-                  <span>WhatsApp y mesa de ayuda</span>
+                  <span>Disponible para todos los roles</span>
                 </div>
                 <Button
                   type="text"
@@ -204,18 +321,41 @@ export function AppLayout() {
                   onClick={() => setChatAbierto(false)}
                 />
               </header>
-              <div className="chat-flotante-cuerpo">
-                <p>Revisa conversaciones en curso o interviene cuando el usuario lo pida.</p>
-                <Button type="primary" block onClick={() => navigate('/agente')}>
-                  Abrir conversaciones
+              <div className="chat-flotante-cuerpo chat-flotante-hilo">
+                {hiloAgente.map((burbuja) => (
+                  <div key={burbuja.id} className={`fab-burbuja ${burbuja.lado}`}>
+                    {burbuja.texto}
+                  </div>
+                ))}
+              </div>
+              <div className="chat-flotante-composer">
+                <Input.TextArea
+                  rows={2}
+                  value={textoAgente}
+                  onChange={(evento) => setTextoAgente(evento.target.value)}
+                  placeholder="Escribe tu consulta…"
+                  onPressEnter={(evento) => {
+                    if (!evento.shiftKey) {
+                      evento.preventDefault();
+                      void enviarAgente();
+                    }
+                  }}
+                />
+                <Button type="primary" block loading={enviandoAgente} onClick={() => void enviarAgente()}>
+                  Enviar
                 </Button>
+                {esMesa && (
+                  <Button block onClick={() => navigate('/agente')}>
+                    Ver supervisión
+                  </Button>
+                )}
               </div>
             </aside>
           )}
           <button
             type="button"
             className={`fab-agente${chatAbierto ? ' abierto' : ''}`}
-            aria-label={chatAbierto ? 'Cerrar asistente' : 'Abrir asistente IA'}
+            aria-label={chatAbierto ? 'Cerrar asistente' : 'Abrir agente web AI'}
             onClick={() => setChatAbierto((valor) => !valor)}
           >
             {chatAbierto ? <CloseOutlined /> : <RobotOutlined />}

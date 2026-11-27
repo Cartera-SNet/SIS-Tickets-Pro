@@ -10,7 +10,7 @@ import { dondeTickets, type Principal } from '../auth/reglas-acceso';
 import { prioridadPorImpacto, sumarTiempoHabil, type Unidad } from './ans';
 import { puedeTransicionar, type EstadoTicket } from './maquina-estados';
 import { validarEscalamiento, type Nivel } from './escalamiento';
-import { debeReabrirSinConfirmacion, estaPorVencer } from './vigilancia';
+import { debeCerrarSinConfirmacion, estaPorVencer } from './vigilancia';
 import { AvisosService } from '../notificaciones/avisos.service';
 import { TiempoRealGateway } from '../notificaciones/tiempo-real.gateway';
 
@@ -93,6 +93,8 @@ export class TicketsService {
           canalOrigen: true,
           fechaObjetivoSolucion: true,
           categoria: { select: { nombre: true } },
+          responsable: { select: { nombre: true } },
+          solicitante: { select: { nombre: true } },
         },
       });
       const hayMas = filas.length > take;
@@ -105,6 +107,8 @@ export class TicketsService {
         nivel: item.nivel,
         canal: item.canalOrigen,
         categoria: item.categoria?.nombre ?? '',
+        responsableNombre: item.responsable?.nombre ?? null,
+        solicitanteNombre: item.solicitante?.nombre ?? null,
         fechaObjetivoSolucion: item.fechaObjetivoSolucion,
       }));
       return { items, nextCursor: hayMas ? items.at(-1)?.id ?? null : null, limit: take };
@@ -131,6 +135,8 @@ export class TicketsService {
       descripcion: string;
       ubicacionId: string;
       equipoId?: string;
+      equipoNombre?: string;
+      equipoSerial?: string;
       puedeTrabajar?: boolean;
       personas?: number;
       areaCompleta?: boolean;
@@ -212,6 +218,8 @@ export class TicketsService {
           sedeId: ubicacion.sedeId,
           ubicacionId: ubicacion.id,
           equipoId: entrada.equipoId || null,
+          equipoNombre: entrada.equipoNombre?.trim() || null,
+          equipoSerial: entrada.equipoSerial?.trim() || null,
           impactoPuedeTrabajar: puedeTrabajar,
           impactoPersonas: personas,
           prioridadId: prioridad.id,
@@ -242,8 +250,12 @@ export class TicketsService {
       return {
         id: ticket.id,
         numero: ticket.numero,
+        titulo: ticket.titulo,
         estado: ticket.estado,
         estadoNombre: ESTADO_TICKET.NUEVO,
+        nivel: ticket.nivel,
+        canal: ticket.canalOrigen,
+        sedeId: ticket.sedeId,
         prioridad: codigo,
       };
     });
@@ -256,6 +268,24 @@ export class TicketsService {
         clave: () => `ticket_creado:${creado.id}`,
       })
       .catch(() => undefined);
+
+    const payloadBandeja = {
+      id: creado.id,
+      numero: creado.numero,
+      titulo: creado.titulo,
+      estado: creado.estado,
+      estadoNombre: creado.estadoNombre,
+      nivel: creado.nivel,
+      canal: creado.canal,
+      categoria: '',
+      responsableNombre: null,
+      fechaObjetivoSolucion: null,
+      ticketId: creado.id,
+    };
+    this.tiempo.emitirMesa('ticket:creado', payloadBandeja);
+    if (creado.sedeId) {
+      this.tiempo.emitirSede(creado.sedeId, 'ticket:creado', payloadBandeja);
+    }
     return creado;
   }
 
@@ -303,7 +333,44 @@ export class TicketsService {
         datosNuevos: { estado: destino },
       },
     });
-    return { id: actualizado.id, numero: actualizado.numero, estado: actualizado.estado, estadoNombre: ESTADO_TICKET[destino] };
+    const payload = {
+      id: actualizado.id,
+      numero: actualizado.numero,
+      estado: actualizado.estado,
+      estadoNombre: ESTADO_TICKET[destino],
+      ticketId: ticket.id,
+    };
+    this.tiempo.emitirTicket(ticket.id, 'ticket:estado', payload);
+    if (destino === 'RESUELTO') {
+      await this.avisos
+        .avisar({
+          evento: 'ticket_resuelto',
+          usuarios: [ticket.solicitanteId],
+          titulo: `${ticket.numero} quedó solucionado`,
+          cuerpo: 'Confirma si tu solicitud ya está resuelta.',
+          clave: () => `resuelto:${ticket.id}:${Date.now()}`,
+        })
+        .catch(() => undefined);
+      this.tiempo.emitir(ticket.solicitanteId, 'ticket:resuelto', payload);
+    }
+    return payload;
+  }
+
+  async listarAdjuntos(actor: Principal, ticketId: string) {
+    try {
+      await this.detalle(actor, ticketId);
+      const filas = await this.prisma.adjunto.findMany({
+        where: { ticketId },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, nombre: true, tamano: true, mime: true, subidoPorId: true, createdAt: true },
+      });
+      return { items: filas };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      return { items: [] };
+    }
   }
 
   async detalle(actor: Principal, ticketId: string) {
@@ -363,11 +430,14 @@ export class TicketsService {
         mime: adjunto.mime,
         subidoPorId: adjunto.subidoPorId,
       })),
+      equipoNombre: ticket.equipoNombre ?? ticket.equipo?.tipo ?? null,
+      equipoSerial: ticket.equipoSerial ?? ticket.equipo?.serial ?? null,
+      canal: ticket.canalOrigen,
     };
   }
 
   async comentar(actor: Principal, ticketId: string, contenido: string) {
-    await this.detalle(actor, ticketId);
+    const ticket = await this.detalle(actor, ticketId);
     const autorTipo =
       actor.rol === 'SOLICITANTE' ? 'USUARIO' : actor.rol === 'TECNICO' ? 'TECNICO' : actor.rol === 'ADMINISTRADOR' ? 'TECNICO' : 'USUARIO';
     const mensaje = await this.prisma.mensaje.create({
@@ -393,6 +463,17 @@ export class TicketsService {
       adjunto: mensaje.adjunto,
     };
     this.tiempo.emitirTicket(ticketId, 'ticket:mensaje', payload);
+    const destinos = new Set<string>();
+    if (ticket.solicitante?.id && ticket.solicitante.id !== actor.id) {
+      destinos.add(ticket.solicitante.id);
+    }
+    const responsableId = (ticket as { responsable?: { id?: string } | null }).responsable?.id;
+    if (responsableId && responsableId !== actor.id) {
+      destinos.add(responsableId);
+    }
+    for (const usuarioId of destinos) {
+      this.tiempo.emitir(usuarioId, 'ticket:mensaje', payload);
+    }
     return payload;
   }
 
@@ -650,18 +731,20 @@ export class TicketsService {
     return { ok: true, id: adjunto.id };
   }
 
-  async confirmar(actor: Principal, ticketId: string, entrada: { confirmar: boolean; calificacion?: number }) {
+  async confirmar(
+    actor: Principal,
+    ticketId: string,
+    entrada: { confirmar: boolean; calificacion?: number; comentario?: string },
+  ) {
     const ticket = await this.prisma.ticket.findFirst({
       where: { id: ticketId, solicitanteId: actor.id },
-      include: { historial: { select: { datosNuevos: true } } },
     });
     if (!ticket) {
       throw new HttpException({ code: 'not_found', message: 'No se encontró el ticket.' }, HttpStatus.NOT_FOUND);
     }
-    const estuvoEnSitio = ticket.historial.some((fila) => JSON.stringify(fila.datosNuevos).includes('EN_SITIO'));
-    if (ticket.estado !== 'RESUELTO' || estuvoEnSitio) {
+    if (ticket.estado !== 'RESUELTO') {
       throw new HttpException(
-        { code: 'conflict', message: 'Solo se confirma una solución remota que ya está resuelta.' },
+        { code: 'conflict', message: 'Solo se confirma cuando el técnico ya marcó la solución.' },
         HttpStatus.CONFLICT,
       );
     }
@@ -669,6 +752,12 @@ export class TicketsService {
     if (entrada.confirmar && (!entrada.calificacion || entrada.calificacion < 1 || entrada.calificacion > 5)) {
       throw new HttpException(
         { code: 'validation_error', message: 'Califica la atención de 1 a 5.' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (!entrada.confirmar && !(entrada.comentario?.trim())) {
+      throw new HttpException(
+        { code: 'validation_error', message: 'Indica por qué la solicitud aún no está solucionada.' },
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -686,10 +775,30 @@ export class TicketsService {
         usuarioId: actor.id,
         tipo: entrada.confirmar ? 'confirmacion' : 'reapertura',
         datosPrevios: { estado: 'RESUELTO' },
-        datosNuevos: { estado: destino, calificacion: entrada.calificacion ?? null },
+        datosNuevos: {
+          estado: destino,
+          calificacion: entrada.calificacion ?? null,
+          comentario: entrada.comentario?.trim() || null,
+        },
       },
     });
-    return { estado: destino, estadoNombre: ESTADO_TICKET[destino] };
+    if (!entrada.confirmar && entrada.comentario?.trim()) {
+      await this.comentar(actor, ticketId, entrada.comentario.trim()).catch(() => undefined);
+    }
+    const afectados = [ticket.responsableId, ticket.solicitanteId].filter((id): id is string => Boolean(id));
+    for (const usuarioId of afectados) {
+      this.tiempo.emitir(usuarioId, 'ticket:estado', {
+        ticketId: ticket.id,
+        estado: destino,
+        estadoNombre: ESTADO_TICKET[destino as keyof typeof ESTADO_TICKET],
+      });
+    }
+    this.tiempo.emitirTicket(ticket.id, 'ticket:estado', {
+      ticketId: ticket.id,
+      estado: destino,
+      estadoNombre: ESTADO_TICKET[destino as keyof typeof ESTADO_TICKET],
+    });
+    return { estado: destino, estadoNombre: ESTADO_TICKET[destino as keyof typeof ESTADO_TICKET] };
   }
 
   async revisarPlazos() {
@@ -705,16 +814,23 @@ export class TicketsService {
     let avisos = 0;
     let reabiertos = 0;
     for (const ticket of abiertos) {
-      const estuvoEnSitio = ticket.historial.some((fila) => JSON.stringify(fila.datosNuevos).includes('EN_SITIO'));
-      if (debeReabrirSinConfirmacion(ticket.estado, estuvoEnSitio, ticket.fechaResolucion, ahora, 24)) {
-        await this.prisma.ticket.update({ where: { id: ticket.id }, data: { estado: 'REABIERTO', fechaCierre: null } });
+      if (debeCerrarSinConfirmacion(ticket.estado, ticket.fechaResolucion, ahora, 24)) {
+        await this.prisma.ticket.update({
+          where: { id: ticket.id },
+          data: { estado: 'CERRADO', fechaCierre: ahora },
+        });
         await this.prisma.historial.create({
           data: {
             ticketId: ticket.id,
-            tipo: 'reapertura_plazo',
+            tipo: 'cierre_automatico',
             datosPrevios: { estado: 'RESUELTO' },
-            datosNuevos: { estado: 'REABIERTO' },
+            datosNuevos: { estado: 'CERRADO', motivo: 'Sin confirmación del solicitante en 24 h' },
           },
+        });
+        this.tiempo.emitirTicket(ticket.id, 'ticket:estado', {
+          ticketId: ticket.id,
+          estado: 'CERRADO',
+          estadoNombre: ESTADO_TICKET.CERRADO,
         });
         reabiertos += 1;
         continue;
@@ -769,11 +885,19 @@ export class TicketsService {
       throw new HttpException({ code: 'conflict', message: decision.mensaje }, HttpStatus.CONFLICT);
     }
     const responsable = await this.prisma.usuario.findFirst({
-      where: { id: entrada.responsableId, rol: 'TECNICO', activo: true, deletedAt: null, niveles: { some: { nivel: entrada.nivelDestino } } },
+      where: {
+        id: entrada.responsableId,
+        activo: true,
+        deletedAt: null,
+        OR: [
+          { rol: 'TECNICO', niveles: { some: { nivel: entrada.nivelDestino } } },
+          { rol: 'ADMINISTRADOR' },
+        ],
+      },
     });
     if (!responsable) {
       throw new HttpException(
-        { code: 'validation_error', message: 'El responsable debe ser un técnico de ese nivel.' },
+        { code: 'validation_error', message: 'Asigna un técnico de ese nivel o un administrador.' },
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -787,7 +911,7 @@ export class TicketsService {
         usuarioId: actor.id,
       },
     });
-    const estado = decision.devolucion ? (entrada.nivelDestino === 'N1' ? 'EN_ATENCION_N1' : 'ASIGNADO') : 'ESCALADO';
+    const estado = 'ASIGNADO';
     await this.prisma.ticket.update({
       where: { id: ticketId },
       data: { nivel: entrada.nivelDestino, estado, responsableId: responsable.id },
@@ -796,21 +920,39 @@ export class TicketsService {
       data: {
         ticketId,
         usuarioId: actor.id,
-        tipo: decision.devolucion ? 'devolucion' : 'escalamiento',
-        datosPrevios: { nivel: ticket.nivel, estado: ticket.estado },
-        datosNuevos: { nivel: entrada.nivelDestino, estado, responsableId: responsable.id },
+        tipo: 'escalamiento',
+        datosPrevios: { nivel: ticket.nivel, estado: ticket.estado, responsableId: ticket.responsableId },
+        datosNuevos: {
+          nivel: entrada.nivelDestino,
+          estado,
+          responsableId: responsable.id,
+          responsableNombre: responsable.nombre,
+          asignadoPorId: actor.id,
+          motivo: entrada.motivo.trim(),
+          acciones: entrada.acciones.trim(),
+        },
       },
     });
     await this.avisos.avisar({
       evento: 'cambio_nivel',
-      usuarios: [ticket.solicitanteId],
-      titulo: `${ticket.numero} cambió de nivel`,
-      cuerpo: decision.devolucion
-        ? `El caso volvió a ${entrada.nivelDestino}.`
-        : `El caso pasó a ${entrada.nivelDestino}.`,
-      clave: () => `nivel:${ticketId}:${entrada.nivelDestino}`,
+      usuarios: [ticket.solicitanteId, responsable.id],
+      titulo: `${ticket.numero} escaló a ${entrada.nivelDestino}`,
+      cuerpo: `Quedó asignado a ${responsable.nombre}.`,
+      clave: () => `nivel:${ticketId}:${entrada.nivelDestino}:${Date.now()}`,
     });
-    return { nivel: entrada.nivelDestino, estado, devolucion: decision.devolucion };
+    this.tiempo.emitir(responsable.id, 'ticket:asignado', {
+      ticketId,
+      numero: ticket.numero,
+      nivel: entrada.nivelDestino,
+      responsableId: responsable.id,
+    });
+    this.tiempo.emitirTicket(ticketId, 'ticket:estado', {
+      ticketId,
+      estado,
+      nivel: entrada.nivelDestino,
+      responsableId: responsable.id,
+    });
+    return { nivel: entrada.nivelDestino, estado, devolucion: false, responsableId: responsable.id };
   }
 
   async ruta(actor: Principal, ticketId: string) {
@@ -853,10 +995,15 @@ export class TicketsService {
       take: 50,
     });
     const tecnicos = await this.prisma.usuario.findMany({
-      where: { rol: 'TECNICO', activo: true, deletedAt: null, ...(sede ? { sedeId: sede } : {}) },
+      where: {
+        activo: true,
+        deletedAt: null,
+        OR: [{ rol: 'TECNICO', ...(sede ? { sedeId: sede } : {}) }, { rol: 'ADMINISTRADOR' }],
+      },
       select: {
         id: true,
         nombre: true,
+        rol: true,
         sede: { select: { nombre: true } },
         niveles: true,
         ticketsAsignados: { where: { deletedAt: null, estado: { notIn: ['CERRADO', 'CANCELADO', 'DESCARTADO'] } }, select: { id: true, nivel: true } },
@@ -866,9 +1013,9 @@ export class TicketsService {
       pendientes,
       tecnicos: tecnicos.map((tecnico) => ({
         id: tecnico.id,
-        nombre: tecnico.nombre,
+        nombre: tecnico.rol === 'ADMINISTRADOR' ? `${tecnico.nombre} (Admin)` : tecnico.nombre,
         sede: tecnico.sede?.nombre ?? '',
-        niveles: tecnico.niveles.map((nivel) => nivel.nivel),
+        niveles: tecnico.rol === 'ADMINISTRADOR' ? ['N1', 'N2', 'N3'] : tecnico.niveles.map((nivel) => nivel.nivel),
         abiertos: tecnico.ticketsAsignados.length,
       })),
     };
@@ -881,20 +1028,54 @@ export class TicketsService {
     if (!ticket) {
       throw new HttpException({ code: 'not_found', message: 'No se encontró el ticket.' }, HttpStatus.NOT_FOUND);
     }
+    const responsable = await this.prisma.usuario.findFirst({
+      where: {
+        id: responsableId,
+        activo: true,
+        deletedAt: null,
+        OR: [{ rol: 'TECNICO' }, { rol: 'ADMINISTRADOR' }],
+      },
+      select: { id: true, nombre: true },
+    });
+    if (!responsable) {
+      throw new HttpException(
+        { code: 'validation_error', message: 'El responsable debe ser un técnico o administrador activo.' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const estado =
+      ticket.estado === 'NUEVO' || ticket.estado === 'ESCALADO' || ticket.estado === 'REABIERTO' ? 'ASIGNADO' : ticket.estado;
     await this.prisma.ticket.update({
       where: { id: ticketId },
-      data: { responsableId, estado: ticket.estado === 'NUEVO' ? 'ASIGNADO' : ticket.estado === 'ESCALADO' ? 'ASIGNADO' : ticket.estado },
+      data: { responsableId, estado },
     });
     await this.prisma.historial.create({
       data: {
         ticketId,
         usuarioId: actor.id,
         tipo: 'asignacion',
-        datosPrevios: { responsableId: ticket.responsableId },
-        datosNuevos: { responsableId },
+        datosPrevios: { responsableId: ticket.responsableId, estado: ticket.estado },
+        datosNuevos: {
+          responsableId,
+          responsableNombre: responsable.nombre,
+          asignadoPorId: actor.id,
+          estado,
+          fecha: new Date().toISOString(),
+        },
       },
     });
-    return { id: ticketId, responsableId };
+    await this.avisos
+      .avisar({
+        evento: 'ticket_asignado',
+        usuarios: [responsable.id, ticket.solicitanteId],
+        titulo: `${ticket.numero} asignado`,
+        cuerpo: `Responsable: ${responsable.nombre}.`,
+        clave: () => `asignado:${ticketId}:${responsable.id}:${Date.now()}`,
+      })
+      .catch(() => undefined);
+    this.tiempo.emitir(responsable.id, 'ticket:asignado', { ticketId, numero: ticket.numero, responsableId });
+    this.tiempo.emitirTicket(ticketId, 'ticket:estado', { ticketId, estado, responsableId });
+    return { id: ticketId, responsableId, estado };
   }
 
   async reabrirDescarte(actor: Principal, ticketId: string) {

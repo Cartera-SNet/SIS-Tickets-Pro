@@ -1,10 +1,11 @@
-import { Button, Input, InputNumber, Modal } from 'antd';
+import { Button, Input, InputNumber, Modal, Select } from 'antd';
 import { useEffect, useRef, useState } from 'react';
-import { useOutletContext, useParams } from 'react-router-dom';
+import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { consultarEvidenciaBase64, descargarEvidenciaBase64, subirEvidenciaBase64 } from '../api/evidencias';
 import { ErrorHttp, type Sesion, api } from '../api/http';
 import { conectarTiempoReal } from '../api/tiempo-real';
 import { claseAns, claseEstado, claseNivel, restanteAns } from '../ui/etiquetas';
+import { useToasts } from '../ui/Toasts';
 
 type Adjunto = {
   id: string;
@@ -35,7 +36,10 @@ type Detalle = {
   nivel: string;
   canal?: string;
   porVencer: boolean;
+  fechaCreacion?: string;
   fechaObjetivoSolucion: string | null;
+  fechaResolucion?: string | null;
+  fechaCierre?: string | null;
   solucionAplicada: string | null;
   solicitante: { id: string; nombre: string };
   prioridad: { nombre: string } | null;
@@ -43,8 +47,10 @@ type Detalle = {
   ubicacion: { nombre: string; piso?: string | null } | null;
   categoria?: { nombre: string } | null;
   subcategoria?: { nombre: string } | null;
-  equipo?: { placa?: string | null; nombre?: string | null } | null;
-  responsable?: { nombre: string } | null;
+  equipo?: { placa?: string | null; nombre?: string | null; serial?: string | null } | null;
+  equipoNombre?: string | null;
+  equipoSerial?: string | null;
+  responsable?: { id?: string; nombre: string } | null;
   mensajes: Mensaje[];
   adjuntos: Adjunto[];
   historial: { id: string; tipo: string; fecha: string; datosNuevos: unknown }[];
@@ -60,15 +66,19 @@ function esPdfArchivo(adjunto: Pick<Adjunto, 'nombre' | 'mime'>) {
 
 export function TicketDetallePage() {
   const { id = '' } = useParams();
+  const navigate = useNavigate();
   const sesion = useOutletContext<Sesion | null>();
+  const { mostrar } = useToasts();
   const [ticket, setTicket] = useState<Detalle | null>(null);
   const [aviso, setAviso] = useState('');
   const [texto, setTexto] = useState('');
   const [archivoRespuesta, setArchivoRespuesta] = useState<File | null>(null);
   const [calificacion, setCalificacion] = useState<number>(5);
+  const [comentarioRechazo, setComentarioRechazo] = useState('');
   const [tecnicos, setTecnicos] = useState<{ id: string; nombre: string; niveles: string[] }[]>([]);
   const socketRef = useRef<ReturnType<typeof conectarTiempoReal> | null>(null);
   const hiloRef = useRef<HTMLDivElement | null>(null);
+  const pestanaRef = useRef<'info' | 'hilo' | 'evidencias' | 'seguimiento'>('info');
   const [escribiendo, setEscribiendo] = useState(false);
   const [pestana, setPestana] = useState<'info' | 'hilo' | 'evidencias' | 'seguimiento'>('info');
   const [linea, setLinea] = useState<{ fecha: string; tipo: string; quien: string; detalle: unknown }[]>([]);
@@ -78,10 +88,27 @@ export function TicketDetallePage() {
   const [miniaturas, setMiniaturas] = useState<Record<string, string>>({});
   const [fallosMiniatura, setFallosMiniatura] = useState<Record<string, string>>({});
   const miniaturasPedidas = useRef<Set<string>>(new Set());
+  const [escalaNivel, setEscalaNivel] = useState('N2');
+  const [escalaMotivo, setEscalaMotivo] = useState('');
+  const [escalaAcciones, setEscalaAcciones] = useState('');
+  const [escalaResponsable, setEscalaResponsable] = useState('');
+  const [actaDiagnostico, setActaDiagnostico] = useState('');
+  const [actaActividades, setActaActividades] = useState('');
+  const [actaEstadoFinal, setActaEstadoFinal] = useState('Operativo');
+  const [generandoActa, setGenerandoActa] = useState(false);
+  pestanaRef.current = pestana;
 
   function cargar() {
     api<Detalle>(`/api/tickets/${id}`)
-      .then(setTicket)
+      .then((detalle) => {
+        setTicket(detalle);
+        if (!actaDiagnostico) {
+          setActaDiagnostico(detalle.descripcion);
+        }
+        if (!actaActividades && detalle.solucionAplicada) {
+          setActaActividades(detalle.solucionAplicada);
+        }
+      })
       .catch((error: unknown) => setAviso(error instanceof ErrorHttp ? error.message : 'No se encontró el caso.'));
   }
 
@@ -89,7 +116,10 @@ export function TicketDetallePage() {
     cargar();
     if (sesion?.permisos.includes('tickets.escalar') || sesion?.permisos.includes('tickets.asignar')) {
       api<{ tecnicos: { id: string; nombre: string; niveles: string[] }[] }>('/api/tickets/asignacion/carga')
-        .then((cuerpo) => setTecnicos(cuerpo.tecnicos))
+        .then((cuerpo) => {
+          setTecnicos(cuerpo.tecnicos);
+          setEscalaResponsable((actual) => actual || cuerpo.tecnicos[0]?.id || '');
+        })
         .catch(() => setTecnicos([]));
     }
   }, [id]);
@@ -97,7 +127,9 @@ export function TicketDetallePage() {
   useEffect(() => {
     const socket = conectarTiempoReal();
     socketRef.current = socket;
-    socket.emit('ticket:unirse', id);
+    const unirse = () => socket.emit('ticket:unirse', id);
+    unirse();
+    socket.on('connect', unirse);
     socket.on('escribiendo', () => {
       setEscribiendo(true);
       window.setTimeout(() => setEscribiendo(false), 2000);
@@ -115,6 +147,14 @@ export function TicketDetallePage() {
         }
         return { ...actual, mensajes: [...actual.mensajes, mensaje] };
       });
+      const chatEnFoco = pestanaRef.current === 'hilo' && document.visibilityState === 'visible';
+      if (!chatEnFoco && mensaje.autorTipo !== 'USUARIO') {
+        mostrar({
+          titulo: `Mensaje · ${mensaje.autor}`,
+          cuerpo: mensaje.contenido.slice(0, 120),
+          href: `/tickets/${id}`,
+        });
+      }
     });
     socket.on(
       'ticket:adjunto',
@@ -142,10 +182,31 @@ export function TicketDetallePage() {
         });
       },
     );
+    socket.on(
+      'ticket:estado',
+      (evento: { ticketId?: string; estado?: string; estadoNombre?: string; nivel?: string; responsableId?: string }) => {
+        if (evento.ticketId && evento.ticketId !== id) {
+          return;
+        }
+        setTicket((actual) => {
+          if (!actual) {
+            return actual;
+          }
+          return {
+            ...actual,
+            estado: evento.estado ?? actual.estado,
+            estadoNombre: evento.estadoNombre ?? actual.estadoNombre,
+            nivel: evento.nivel ?? actual.nivel,
+          };
+        });
+        cargar();
+      },
+    );
     return () => {
+      socket.off('connect', unirse);
       socket.close();
     };
-  }, [id]);
+  }, [id, mostrar]);
 
   useEffect(() => {
     if (pestana !== 'seguimiento' && pestana !== 'info') {
@@ -319,10 +380,19 @@ export function TicketDetallePage() {
 
   async function confirmar(acepta: boolean) {
     try {
+      if (!acepta && comentarioRechazo.trim().length < 4) {
+        setAviso('Indica por qué la solicitud aún no está solucionada.');
+        return;
+      }
       await api(`/api/tickets/${id}/confirmacion`, {
         method: 'POST',
-        body: { confirmar: acepta, calificacion: acepta ? calificacion : undefined },
+        body: {
+          confirmar: acepta,
+          calificacion: acepta ? calificacion : undefined,
+          comentario: acepta ? undefined : comentarioRechazo.trim(),
+        },
       });
+      setComentarioRechazo('');
       cargar();
     } catch (error) {
       setAviso(error instanceof ErrorHttp ? error.message : 'No se pudo confirmar.');
@@ -330,7 +400,7 @@ export function TicketDetallePage() {
   }
 
   async function marcarResuelto() {
-    const solucion = window.prompt('Describe la solución aplicada');
+    const solucion = window.prompt('Describe la solución aplicada para avisar al solicitante');
     if (!solucion?.trim()) {
       return;
     }
@@ -339,9 +409,78 @@ export function TicketDetallePage() {
         method: 'POST',
         body: { estado: 'RESUELTO', solucionAplicada: solucion },
       });
+      setActaActividades(solucion.trim());
       cargar();
     } catch (error) {
-      setAviso(error instanceof ErrorHttp ? error.message : 'No se pudo marcar resuelto.');
+      setAviso(error instanceof ErrorHttp ? error.message : 'No se pudo avisar la solución.');
+    }
+  }
+
+  async function registrarEscala() {
+    if (!escalaMotivo.trim() || !escalaAcciones.trim()) {
+      setAviso('Completa Motivo y Acción ya realizada para escalar.');
+      return;
+    }
+    if (!escalaResponsable) {
+      setAviso('Asigna un técnico o al administrador para escalar.');
+      return;
+    }
+    const motivo = escalaMotivo.trim();
+    const acciones = escalaAcciones.trim();
+    const nivelDestino = ticket?.nivel === 'N2' ? 'N3' : escalaNivel;
+    try {
+      await api(`/api/tickets/${id}/escalar`, {
+        method: 'POST',
+        body: {
+          nivelDestino,
+          motivo,
+          acciones,
+          responsableId: escalaResponsable,
+        },
+      });
+      setEscalaMotivo('');
+      setEscalaAcciones('');
+      setActaDiagnostico((actual) => actual || motivo);
+      setActaActividades((actual) => actual || acciones);
+      cargar();
+    } catch (error) {
+      setAviso(error instanceof ErrorHttp ? error.message : 'No se pudo escalar.');
+    }
+  }
+
+  async function generarActaDesdeSeguimiento() {
+    if (!ticket) {
+      return;
+    }
+    const diagnostico = (actaDiagnostico || escalaMotivo || ticket.descripcion).trim();
+    const actividades = (actaActividades || escalaAcciones || ticket.solucionAplicada || '').trim();
+    if (diagnostico.length < 4 || actividades.length < 4) {
+      setAviso('Completa motivo/diagnóstico y acciones realizadas antes de generar el acta.');
+      setPestana('seguimiento');
+      return;
+    }
+    setGenerandoActa(true);
+    try {
+      const acta = await api<{ id: string; numero: string }>('/api/actas', {
+        method: 'POST',
+        body: {
+          ticketId: ticket.id,
+          diagnostico,
+          actividades,
+          estadoFinal: actaEstadoFinal.trim() || 'Operativo',
+          observaciones: `Evidencias: ${ticket.adjuntos.map((item) => item.nombre).join(', ') || 'ninguna'}`,
+        },
+      });
+      mostrar({
+        titulo: `Acta ${acta.numero} generada`,
+        cuerpo: `Ticket ${ticket.numero}`,
+        href: `/actas/${acta.id}`,
+      });
+      navigate(`/actas/${acta.id}`);
+    } catch (error) {
+      setAviso(error instanceof ErrorHttp ? error.message : 'No se pudo generar el acta.');
+    } finally {
+      setGenerandoActa(false);
     }
   }
 
@@ -356,6 +495,27 @@ export function TicketDetallePage() {
   const esEquipo = sesion?.rol === 'TECNICO' || sesion?.rol === 'ADMINISTRADOR';
   const esTecnico = esEquipo || Boolean(sesion?.permisos?.includes('tickets.ver_sede'));
   const puedeAdjuntarRespuesta = esEquipo || Boolean(sesion?.permisos?.includes('tickets.resolver'));
+  const puedeEscalar = Boolean(sesion?.permisos.includes('tickets.escalar')) && ticket.nivel !== 'N3';
+  const puedeActa = Boolean(sesion?.permisos.includes('actas.firmar')) && ticket.nivel !== 'N1';
+  const nombreEquipo = ticket.equipoNombre || ticket.equipo?.placa || ticket.equipo?.nombre || '';
+  const serialEquipo = ticket.equipoSerial || ticket.equipo?.serial || '';
+  const etiquetaEquipo =
+    !nombreEquipo && !serialEquipo
+      ? '—'
+      : [nombreEquipo, serialEquipo ? `Serial: ${serialEquipo}` : ''].filter(Boolean).join(' · ');
+  const nivelesEscala =
+    ticket.nivel === 'N1'
+      ? [
+          { value: 'N2', label: 'N2' },
+          { value: 'N3', label: 'N3 (solo si el área está detenida)' },
+        ]
+      : ticket.nivel === 'N2'
+        ? [{ value: 'N3', label: 'N3' }]
+        : [];
+  const nivelEscalaEfectivo = ticket.nivel === 'N2' ? 'N3' : escalaNivel;
+  const tecnicosFiltrados = tecnicos.filter(
+    (tecnico) => tecnico.niveles.includes(nivelEscalaEfectivo) || tecnico.nombre.includes('(Admin)'),
+  );
   const prioridadAlta =
     (ticket.prioridad?.nombre ?? '').toLowerCase().includes('alta') ||
     (ticket.prioridad?.nombre ?? '').toLowerCase().includes('crítica') ||
@@ -534,9 +694,9 @@ export function TicketDetallePage() {
           {sesion?.permisos.includes('tickets.escalar') && (
             <Button onClick={() => setPestana('info')}>Escalar</Button>
           )}
-          {sesion?.permisos.includes('tickets.resolver') && ticket.estado !== 'RESUELTO' && (
+          {sesion?.permisos.includes('tickets.resolver') && ticket.estado !== 'RESUELTO' && ticket.estado !== 'CERRADO' && (
             <Button type="primary" onClick={() => void marcarResuelto()}>
-              Marcar resuelto
+              Avisar solución al solicitante
             </Button>
           )}
         </div>
@@ -584,7 +744,7 @@ export function TicketDetallePage() {
             </div>
             <div className="dato-fila">
               <span>Equipo</span>
-              <span>{[ticket.equipo?.placa, ticket.equipo?.nombre].filter(Boolean).join(' · ') || '—'}</span>
+              <span>{etiquetaEquipo}</span>
             </div>
             <div className="dato-fila">
               <span>Responsable</span>
@@ -606,61 +766,81 @@ export function TicketDetallePage() {
             )}
           </article>
 
-          {sesion?.permisos.includes('tickets.escalar') && (
+          {puedeEscalar && nivelesEscala.length > 0 && (
             <article className="panel-tarjeta" style={{ gridColumn: '1 / -1' }}>
-              <h2>Escalar o devolver</h2>
-              <form
-                className="filtros-fila"
-                onSubmit={(evento) => {
-                  evento.preventDefault();
-                  const datos = new FormData(evento.currentTarget);
-                  void api(`/api/tickets/${id}/escalar`, {
-                    method: 'POST',
-                    body: {
-                      nivelDestino: datos.get('nivel'),
-                      motivo: datos.get('motivo'),
-                      acciones: datos.get('acciones'),
-                      responsableId: datos.get('responsable'),
-                    },
-                  })
-                    .then(() => cargar())
-                    .catch((error: unknown) =>
-                      setAviso(error instanceof ErrorHttp ? error.message : 'No se pudo escalar.'),
-                    );
-                }}
-              >
-                <select name="nivel" aria-label="Nivel destino" defaultValue="N2">
-                  <option value="N1">N1</option>
-                  <option value="N2">N2</option>
-                  <option value="N3">N3</option>
-                </select>
-                <select name="responsable" aria-label="Responsable" defaultValue={tecnicos[0]?.id}>
-                  {tecnicos.map((tecnico) => (
-                    <option key={tecnico.id} value={tecnico.id}>
-                      {tecnico.nombre} · {tecnico.niveles.join(', ')}
-                    </option>
-                  ))}
-                </select>
-                <Input name="motivo" placeholder="Motivo" required style={{ minWidth: 180, flex: 1 }} />
-                <Input name="acciones" placeholder="Acciones ya hechas" required style={{ minWidth: 180, flex: 1 }} />
-                <Button htmlType="submit" type="primary">
-                  Registrar
+              <h2>Escalar</h2>
+              <p>
+                Solo se escala a un nivel superior. Debes asignar un técnico o al administrador; el caso no entra en
+                atención hasta tener responsable.
+              </p>
+              <div className="filtros-fila" style={{ flexWrap: 'wrap' }}>
+                <Select
+                  aria-label="Nivel destino"
+                  style={{ width: 220 }}
+                  value={nivelEscalaEfectivo}
+                  onChange={setEscalaNivel}
+                  options={nivelesEscala}
+                  disabled={ticket.nivel === 'N2'}
+                />
+                <Select
+                  aria-label="Asignar a"
+                  style={{ minWidth: 220, flex: 1 }}
+                  value={escalaResponsable || undefined}
+                  onChange={setEscalaResponsable}
+                  placeholder="Asignar técnico o admin"
+                  options={tecnicosFiltrados.map((tecnico) => ({
+                    value: tecnico.id,
+                    label: `${tecnico.nombre} · ${tecnico.niveles.join(', ')}`,
+                  }))}
+                />
+                <Input
+                  value={escalaMotivo}
+                  onChange={(evento) => setEscalaMotivo(evento.target.value)}
+                  placeholder="Motivo"
+                  required
+                  style={{ minWidth: 180, flex: 1 }}
+                />
+                <Input
+                  value={escalaAcciones}
+                  onChange={(evento) => setEscalaAcciones(evento.target.value)}
+                  placeholder="Acción ya realizada"
+                  required
+                  style={{ minWidth: 180, flex: 1 }}
+                />
+                <Button
+                  type="primary"
+                  onClick={() => void registrarEscala()}
+                  disabled={!escalaMotivo.trim() || !escalaAcciones.trim() || !escalaResponsable}
+                >
+                  Escalar y asignar
                 </Button>
-              </form>
+              </div>
             </article>
           )}
 
           {esMio && ticket.estado === 'RESUELTO' && (
             <article className="panel-tarjeta" style={{ gridColumn: '1 / -1' }}>
-              <h2>Validación del solicitante</h2>
-              <p>¿Quedó resuelto? Si no confirmas en 24 horas, el caso se reabre.</p>
-              <div className="filtros-fila">
+              <h2>Confirmación de la solución</h2>
+              <p>
+                El técnico indica que tu solicitud ya fue solucionada. Confirma para cerrar el caso, o indica que aún no
+                lo está (se reabre con tu comentario). Si no respondes en 24 horas, el caso se cierra automáticamente.
+              </p>
+              <div className="filtros-fila" style={{ flexWrap: 'wrap' }}>
                 <InputNumber min={1} max={5} value={calificacion} onChange={(valor) => setCalificacion(Number(valor ?? 5))} />
                 <Button type="primary" onClick={() => void confirmar(true)}>
-                  Confirmar y calificar
+                  Confirmar solución
                 </Button>
-                <Button onClick={() => void confirmar(false)}>No quedó resuelto</Button>
               </div>
+              <Input.TextArea
+                style={{ marginTop: 12 }}
+                rows={2}
+                value={comentarioRechazo}
+                onChange={(evento) => setComentarioRechazo(evento.target.value)}
+                placeholder="Si aún no está solucionada, escribe el motivo…"
+              />
+              <Button style={{ marginTop: 8 }} onClick={() => void confirmar(false)}>
+                Aún no está solucionada
+              </Button>
             </article>
           )}
         </div>
@@ -765,9 +945,23 @@ export function TicketDetallePage() {
             <h2>{esMio ? 'Historial de tu caso' : 'Historial'}</h2>
             <p className="seguimiento-intro">
               {esMio
-                ? 'Aquí ves qué ha hecho el equipo de soporte con tu solicitud: asignación, cambios de estado y respuestas.'
+                ? 'Aquí ves qué ha hecho el equipo de soporte con tu solicitud: asignación, cambios de estado, evidencias y respuestas.'
                 : 'Registro auditable de estados, responsables y movimientos del ticket.'}
             </p>
+            {(esMio || esTecnico) && ticket.adjuntos.length > 0 && (
+              <div className="seguimiento-evidencias">
+                <strong>Evidencias de avance</strong>
+                <ul>
+                  {ticket.adjuntos.map((adjunto) => (
+                    <li key={adjunto.id}>
+                      <button type="button" className="enlace-inline" onClick={() => setVisor(adjunto)}>
+                        {adjunto.nombre}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <ol className="linea-tiempo">
               {linea.map((fila, indice) => (
                 <li key={`${fila.fecha}-${indice}`}>
@@ -792,6 +986,55 @@ export function TicketDetallePage() {
               )}
             </ol>
           </article>
+          {puedeActa && (
+            <article className="panel-tarjeta" style={{ gridColumn: '1 / -1' }}>
+              <h2>Acta de cierre</h2>
+              <p>
+                Se precarga con el seguimiento del ticket {ticket.numero} (ID {ticket.id}). No reescribas datos ya
+                registrados.
+              </p>
+              <div className="dato-fila">
+                <span>Equipo</span>
+                <span>{etiquetaEquipo}</span>
+              </div>
+              <div className="dato-fila">
+                <span>Solicitante</span>
+                <span>{ticket.solicitante.nombre}</span>
+              </div>
+              <div className="dato-fila">
+                <span>Técnico</span>
+                <span>{ticket.responsable?.nombre ?? 'Sin asignar'}</span>
+              </div>
+              <label>
+                Motivo / diagnóstico
+                <Input.TextArea
+                  rows={2}
+                  value={actaDiagnostico}
+                  onChange={(evento) => setActaDiagnostico(evento.target.value)}
+                />
+              </label>
+              <label>
+                Acciones / solución aplicada
+                <Input.TextArea
+                  rows={2}
+                  value={actaActividades}
+                  onChange={(evento) => setActaActividades(evento.target.value)}
+                />
+              </label>
+              <label>
+                Estado final
+                <Input value={actaEstadoFinal} onChange={(evento) => setActaEstadoFinal(evento.target.value)} />
+              </label>
+              <Button
+                type="primary"
+                loading={generandoActa}
+                style={{ marginTop: 12 }}
+                onClick={() => void generarActaDesdeSeguimiento()}
+              >
+                Generar acta desde seguimiento
+              </Button>
+            </article>
+          )}
         </div>
       )}
 

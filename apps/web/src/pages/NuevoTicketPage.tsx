@@ -1,6 +1,6 @@
 import { Button, Checkbox, Form, Input, Modal, Select } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { subirEvidenciaBase64 } from '../api/evidencias';
 import { ErrorHttp, api } from '../api/http';
 
@@ -9,8 +9,14 @@ type Categoria = { id: string; nombre: string; subcategorias: Subcategoria[] };
 type Sede = { id: string; nombre: string; ubicaciones: { id: string; nombre: string; piso: string | null }[] };
 type Equipo = { id: string; placa: string | null; tipo: string };
 
+function textoEquipo(nombre?: string | null, serial?: string | null) {
+  const partes = [nombre?.trim(), serial?.trim() ? `Serial: ${serial.trim()}` : ''].filter(Boolean);
+  return partes.join(' · ');
+}
+
 export function NuevoTicketPage() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [form] = Form.useForm();
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [sedes, setSedes] = useState<Sede[]>([]);
@@ -36,6 +42,19 @@ export function NuevoTicketPage() {
       })
       .catch((error: unknown) => setAviso(error instanceof ErrorHttp ? error.message : 'No se cargaron los catálogos.'));
   }, []);
+
+  useEffect(() => {
+    const equipo = params.get('equipo')?.trim() || '';
+    const serial = params.get('serial')?.trim() || '';
+    if (!equipo && !serial) {
+      return;
+    }
+    form.setFieldsValue({
+      equipoNombre: equipo,
+      equipoSerial: serial,
+      equipoTexto: textoEquipo(equipo, serial),
+    });
+  }, [params, form]);
 
   const categoriaActiva = useMemo(
     () => categorias.find((item) => item.id === categoriaId) ?? null,
@@ -96,11 +115,25 @@ export function NuevoTicketPage() {
     setModalAbierto(false);
   }
 
+  function sincronizarEquipoDesdeTexto(valor: string) {
+    const serialMatch = valor.match(/Serial:\s*(.+)$/i);
+    if (serialMatch) {
+      const serial = serialMatch[1].trim();
+      const nombre = valor.slice(0, serialMatch.index).replace(/[·|]\s*$/, '').trim();
+      form.setFieldsValue({ equipoNombre: nombre, equipoSerial: serial });
+      return;
+    }
+    form.setFieldsValue({ equipoNombre: valor.trim(), equipoSerial: form.getFieldValue('equipoSerial') });
+  }
+
   async function enviar(valores: {
     categoriaId: string;
     descripcion: string;
     ubicacionId: string;
     equipoId?: string;
+    equipoNombre?: string;
+    equipoSerial?: string;
+    equipoTexto?: string;
   }) {
     if (!tiposElegidos.length) {
       setAviso('Elige una categoría y al menos un tipo de incidencia.');
@@ -124,6 +157,8 @@ export function NuevoTicketPage() {
           descripcion: valores.descripcion,
           ubicacionId: valores.ubicacionId,
           equipoId: valores.equipoId || undefined,
+          equipoNombre: valores.equipoNombre?.trim() || undefined,
+          equipoSerial: valores.equipoSerial?.trim() || undefined,
         },
       });
       for (const archivo of evidencias) {
@@ -196,7 +231,30 @@ export function NuevoTicketPage() {
           />
         </Form.Item>
 
-        <Form.Item name="equipoId" label="Equipo, si aplica">
+        <Form.Item name="equipoTexto" label="Equipo (nombre y serial)">
+          <Input
+            placeholder="Nombre del equipo · Serial: …"
+            onChange={(evento) => sincronizarEquipoDesdeTexto(evento.target.value)}
+          />
+        </Form.Item>
+        <Form.Item name="equipoNombre" hidden>
+          <Input />
+        </Form.Item>
+        <Form.Item name="equipoSerial" hidden>
+          <Input />
+        </Form.Item>
+
+        <div className="equipo-script-ayuda">
+          <a href="/scripts/obtener-equipo-sis.ps1" download>
+            Obtener datos del equipo
+          </a>
+          <span>
+            Descarga el script de Windows y ábrelo para precargar nombre y serial.{' '}
+            <Link to="/manual">Ver instrucciones</Link>
+          </span>
+        </div>
+
+        <Form.Item name="equipoId" label="Equipo del inventario, si aplica">
           <Select
             allowClear
             options={equipos.map((item) => ({ value: item.id, label: item.placa ?? item.tipo }))}

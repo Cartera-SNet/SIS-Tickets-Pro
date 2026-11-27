@@ -1,4 +1,4 @@
-import { debeReabrirSinConfirmacion, estaPorVencer } from './vigilancia';
+import { debeCerrarSinConfirmacion, debeReabrirSinConfirmacion, estaPorVencer } from './vigilancia';
 
 describe('vigilancia de plazos', () => {
   const ahora = new Date('2026-11-24T15:00:00Z');
@@ -10,10 +10,10 @@ describe('vigilancia de plazos', () => {
     expect(estaPorVencer(new Date('2026-11-24T16:00:00Z'), ahora, 15, 'NUEVO')).toBe(false);
   });
 
-  it('reabre un resuelto remoto si nadie confirma a tiempo', () => {
+  it('cierra un resuelto si nadie confirma a tiempo', () => {
     const ayer = new Date('2026-11-23T15:00:00Z');
+    expect(debeCerrarSinConfirmacion('RESUELTO', ayer, ahora, 24)).toBe(true);
+    expect(debeCerrarSinConfirmacion('RESUELTO', new Date('2026-11-24T14:00:00Z'), ahora, 24)).toBe(false);
     expect(debeReabrirSinConfirmacion('RESUELTO', false, ayer, ahora, 24)).toBe(true);
-    expect(debeReabrirSinConfirmacion('RESUELTO', true, ayer, ahora, 24)).toBe(false);
-    expect(debeReabrirSinConfirmacion('RESUELTO', false, new Date('2026-11-24T14:00:00Z'), ahora, 24)).toBe(false);
   });
 });

@@ -20,9 +20,14 @@ describe('escalamiento', () => {
     expect(validarEscalamiento({ ...base, nivelDestino: 'N3', areaCompleta: true }).ok).toBe(true);
   });
 
-  it('una devolución exige justificación y baja de nivel', () => {
+  it('desde N2 solo permite escalar a N3', () => {
+    expect(validarEscalamiento({ ...base, nivelActual: 'N2', nivelDestino: 'N3' }).ok).toBe(true);
+    expect(validarEscalamiento({ ...base, nivelActual: 'N2', nivelDestino: 'N1' }).ok).toBe(false);
+  });
+
+  it('ya no permite devolver a un nivel inferior', () => {
     const resultado = validarEscalamiento({ ...base, nivelActual: 'N2', nivelDestino: 'N1', motivo: 'Era remoto' });
-    expect(resultado.ok && resultado.devolucion).toBe(true);
+    expect(resultado.ok).toBe(false);
   });
 
   it('el agente no cierra un ticket que ya fue escalado', () => {

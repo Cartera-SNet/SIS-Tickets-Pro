@@ -61,6 +61,16 @@ class CrearTicketDto {
   equipoId?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  equipoNombre?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  equipoSerial?: string;
+
+  @IsOptional()
   @IsBoolean()
   puedeTrabajar?: boolean;
 
@@ -83,6 +93,11 @@ class ConfirmarDto {
   @Min(1)
   @Max(5)
   calificacion?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  comentario?: string;
 }
 
 class MensajeDto {
@@ -145,6 +160,12 @@ export class TicketsController {
   @CualquierPermiso('tickets.ver_propios', 'tickets.ver_sede')
   comentar(@Req() peticion: Request, @Param('id', ParseUUIDPipe) id: string, @Body() cuerpo: MensajeDto) {
     return this.tickets.comentar(principalDe(peticion), id, cuerpo.contenido);
+  }
+
+  @Get(':id/adjuntos')
+  @CualquierPermiso('tickets.ver_propios', 'tickets.ver_sede')
+  listarAdjuntos(@Req() peticion: Request, @Param('id', ParseUUIDPipe) id: string) {
+    return this.tickets.listarAdjuntos(principalDe(peticion), id);
   }
 
   @Post(':id/adjuntos')

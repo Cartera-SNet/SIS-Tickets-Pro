@@ -394,6 +394,8 @@ model Ticket {
   ubicacion                       Ubicacion?     @relation(fields: [ubicacionId], references: [id], onDelete: Restrict)
   equipoId                        String?        @map("equipo_id") @db.Uuid
   equipo                          Equipo?        @relation(fields: [equipoId], references: [id], onDelete: Restrict)
+  equipoNombre                    String?        @map("equipo_nombre")
+  equipoSerial                    String?        @map("equipo_serial")
   impactoPuedeTrabajar            Boolean?       @map("impacto_puede_trabajar")
   impactoPersonas                 Int?           @map("impacto_personas")
   prioridadId                     String?        @map("prioridad_id") @db.Uuid

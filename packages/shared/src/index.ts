@@ -20,7 +20,7 @@ export const ESTADO_TICKET = {
   EN_PROCESO: "En proceso",
   ESPERANDO_USUARIO: "Esperando usuario",
   ESPERANDO_REPUESTO: "Esperando repuesto",
-  RESUELTO: "Resuelto",
+  RESUELTO: "Solucionado, pendiente de confirmación",
   CERRADO: "Cerrado",
   PENDIENTE_DE_FIRMA: "Pendiente de firma",
   CERRADO_CON_ACTA: "Cerrado con acta",

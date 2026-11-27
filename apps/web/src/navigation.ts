@@ -26,7 +26,7 @@ const PERMISOS_DE_RUTA: Record<string, readonly string[] | null> = {
   '/': null,
   '/tickets': ['tickets.ver_propios', 'tickets.ver_sede'],
   '/tickets/nuevo': ['tickets.crear'],
-  '/agente': ['tickets.ver_sede'],
+  '/agente': null,
   '/preventivo': ['preventivo.ejecutar', 'reportes.ver'],
   '/actas': ['tickets.ver_sede', 'reportes.ver'],
   '/notificaciones': null,

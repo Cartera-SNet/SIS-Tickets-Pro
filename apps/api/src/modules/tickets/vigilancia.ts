@@ -8,15 +8,26 @@ export function estaPorVencer(objetivo: Date, ahora: Date, anticipacionMinutos: 
   return ahora.getTime() >= inicio && ahora.getTime() < objetivo.getTime();
 }
 
-export function debeReabrirSinConfirmacion(
+/** Tras el plazo sin confirmación del solicitante, el caso pasa a Cerrado. */
+export function debeCerrarSinConfirmacion(
   estado: string,
-  estuvoEnSitio: boolean,
   fechaResolucion: Date | null,
   ahora: Date,
   horas: number,
 ): boolean {
-  if (estado !== 'RESUELTO' || estuvoEnSitio || !fechaResolucion) {
+  if (estado !== 'RESUELTO' || !fechaResolucion) {
     return false;
   }
   return ahora.getTime() - fechaResolucion.getTime() >= horas * 3_600_000;
+}
+
+/** @deprecated Usar debeCerrarSinConfirmacion. Se mantiene por compatibilidad de imports. */
+export function debeReabrirSinConfirmacion(
+  estado: string,
+  _estuvoEnSitio: boolean,
+  fechaResolucion: Date | null,
+  ahora: Date,
+  horas: number,
+): boolean {
+  return debeCerrarSinConfirmacion(estado, fechaResolucion, ahora, horas);
 }
