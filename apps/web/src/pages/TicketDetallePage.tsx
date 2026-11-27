@@ -73,6 +73,8 @@ export function TicketDetallePage() {
   const [aviso, setAviso] = useState('');
   const [texto, setTexto] = useState('');
   const [archivoRespuesta, setArchivoRespuesta] = useState<File | null>(null);
+  const [previewAdjunto, setPreviewAdjunto] = useState('');
+  const [enviandoChat, setEnviandoChat] = useState(false);
   const [calificacion, setCalificacion] = useState<number>(5);
   const [comentarioRechazo, setComentarioRechazo] = useState('');
   const [tecnicos, setTecnicos] = useState<{ id: string; nombre: string; niveles: string[] }[]>([]);
@@ -253,13 +255,25 @@ export function TicketDetallePage() {
   const idsAdjuntos = ticket?.adjuntos.map((item) => item.id).join(',') ?? '';
 
   useEffect(() => {
-    if (!ticket || pestana !== 'evidencias') {
+    if (!ticket || (pestana !== 'evidencias' && pestana !== 'hilo')) {
       return;
     }
     let cancelado = false;
-    const pendientes = ticket.adjuntos.filter(
-      (adjunto) => esImagenArchivo(adjunto) && !miniaturasPedidas.current.has(adjunto.id),
-    );
+    const delChat =
+      pestana === 'hilo'
+        ? ticket.mensajes
+            .map((mensaje) => mensaje.adjunto)
+            .filter((adjunto): adjunto is Adjunto => Boolean(adjunto))
+        : [];
+    const fuente = pestana === 'hilo' ? [...ticket.adjuntos, ...delChat] : ticket.adjuntos;
+    const vistos = new Set<string>();
+    const pendientes = fuente.filter((adjunto) => {
+      if (!esImagenArchivo(adjunto) || miniaturasPedidas.current.has(adjunto.id) || vistos.has(adjunto.id)) {
+        return false;
+      }
+      vistos.add(adjunto.id);
+      return true;
+    });
     for (const adjunto of pendientes) {
       miniaturasPedidas.current.add(adjunto.id);
     }
@@ -289,41 +303,51 @@ export function TicketDetallePage() {
     };
   }, [idsAdjuntos, pestana, ticket]);
 
+  function incorporarMensajeConAdjunto(cuerpo: Adjunto & { mensaje?: Mensaje }) {
+    setTicket((actual) => {
+      if (!actual) {
+        return actual;
+      }
+      const adjuntos = actual.adjuntos.some((item) => item.id === cuerpo.id)
+        ? actual.adjuntos
+        : [
+            ...actual.adjuntos,
+            {
+              id: cuerpo.id,
+              nombre: cuerpo.nombre,
+              tamano: cuerpo.tamano,
+              mime: cuerpo.mime,
+              subidoPorId: cuerpo.subidoPorId,
+            },
+          ];
+      const mensajes =
+        cuerpo.mensaje && !actual.mensajes.some((item) => item.id === cuerpo.mensaje?.id)
+          ? [...actual.mensajes, cuerpo.mensaje]
+          : actual.mensajes;
+      return { ...actual, adjuntos, mensajes };
+    });
+    miniaturasPedidas.current.delete(cuerpo.id);
+  }
+
   async function enviarMensaje() {
     const contenido = texto.trim();
     const archivo = archivoRespuesta;
-    const soyDuenio = Boolean(sesion?.id && ticket?.solicitante.id === sesion.id);
-    const comoEquipo = sesion?.rol === 'TECNICO' || sesion?.rol === 'ADMINISTRADOR';
-    if (!contenido && !(archivo && soyDuenio)) {
+    if (!contenido && !archivo) {
       return;
     }
+    if (enviandoChat) {
+      return;
+    }
+    setEnviandoChat(true);
     setTexto('');
     setArchivoRespuesta(null);
+    setPreviewAdjunto('');
     try {
-      if (archivo && comoEquipo) {
-        if (!contenido) {
-          throw new ErrorHttp(400, 'Escribe la respuesta al solicitante para adjuntar la evidencia.');
-        }
-        const cuerpo = (await subirEvidenciaBase64(id, archivo, contenido)) as Adjunto & { mensaje?: Mensaje };
-        setTicket((actual) => {
-          if (!actual) {
-            return actual;
-          }
-          const adjuntos = actual.adjuntos.some((item) => item.id === cuerpo.id)
-            ? actual.adjuntos
-            : [...actual.adjuntos, { id: cuerpo.id, nombre: cuerpo.nombre, tamano: cuerpo.tamano, mime: cuerpo.mime, subidoPorId: cuerpo.subidoPorId }];
-          const mensajes =
-            cuerpo.mensaje && !actual.mensajes.some((item) => item.id === cuerpo.mensaje?.id)
-              ? [...actual.mensajes, cuerpo.mensaje]
-              : actual.mensajes;
-          return { ...actual, adjuntos, mensajes };
-        });
-        return;
-      }
-      if (archivo && soyDuenio) {
-        await subirEvidenciaSolicitante(archivo);
-      }
-      if (!contenido) {
+      if (archivo) {
+        const cuerpo = (await subirEvidenciaBase64(id, archivo, contenido || undefined)) as Adjunto & {
+          mensaje?: Mensaje;
+        };
+        incorporarMensajeConAdjunto(cuerpo);
         return;
       }
       const mensaje = await api<Mensaje>(`/api/tickets/${id}/mensajes`, {
@@ -343,22 +367,28 @@ export function TicketDetallePage() {
       setTexto(contenido);
       setArchivoRespuesta(archivo);
       setAviso(error instanceof ErrorHttp ? error.message : 'No se pudo enviar el mensaje.');
+    } finally {
+      setEnviandoChat(false);
+    }
+  }
+
+  function elegirArchivoChat(archivo: File | null) {
+    setArchivoRespuesta(archivo);
+    setPreviewAdjunto((previa) => {
+      if (previa) {
+        URL.revokeObjectURL(previa);
+      }
+      return '';
+    });
+    if (archivo && archivo.type.startsWith('image/')) {
+      setPreviewAdjunto(URL.createObjectURL(archivo));
     }
   }
 
   async function subirEvidenciaSolicitante(archivo: File) {
     try {
-      const adjunto = (await subirEvidenciaBase64(id, archivo)) as Adjunto;
-      setTicket((actual) => {
-        if (!actual) {
-          return actual;
-        }
-        if (actual.adjuntos.some((item) => item.id === adjunto.id)) {
-          return actual;
-        }
-        return { ...actual, adjuntos: [...actual.adjuntos, adjunto] };
-      });
-      miniaturasPedidas.current.delete(adjunto.id);
+      const cuerpo = (await subirEvidenciaBase64(id, archivo)) as Adjunto & { mensaje?: Mensaje };
+      incorporarMensajeConAdjunto(cuerpo);
     } catch (error) {
       setAviso(error instanceof ErrorHttp ? error.message : 'No se pudo adjuntar.');
     }
@@ -545,6 +575,8 @@ export function TicketDetallePage() {
     const delSoporte =
       mensaje.autorTipo === 'TECNICO' || mensaje.autorTipo === 'AGENTE_IA' || mensaje.autorTipo === 'SISTEMA';
     const adjunto = mensaje.adjunto;
+    const esSoloCaptionArchivo =
+      adjunto && (mensaje.contenido === `📎 ${adjunto.nombre}` || mensaje.contenido === adjunto.nombre);
     return (
       <div className={`hilo-msg ${delSoporte ? 'salida' : 'entrada'}`} key={mensaje.id}>
         <header>
@@ -556,67 +588,98 @@ export function TicketDetallePage() {
             {new Date(mensaje.fecha).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
           </time>
         </header>
-        <div>{mensaje.contenido}</div>
-        {adjunto && (
-          <button type="button" className="hilo-adjunto" onClick={() => setVisor(adjunto)}>
-            Evidencia: {adjunto.nombre}
+        {adjunto && esImagenArchivo(adjunto) && miniaturas[adjunto.id] ? (
+          <button type="button" className="hilo-media" onClick={() => setVisor(adjunto)} aria-label={`Ver ${adjunto.nombre}`}>
+            <img src={miniaturas[adjunto.id]} alt={adjunto.nombre} />
           </button>
-        )}
+        ) : null}
+        {adjunto && !esImagenArchivo(adjunto) ? (
+          <button type="button" className="hilo-adjunto" onClick={() => setVisor(adjunto)}>
+            {esPdfArchivo(adjunto) ? 'PDF' : 'Archivo'}: {adjunto.nombre}
+          </button>
+        ) : null}
+        {adjunto && esImagenArchivo(adjunto) && !miniaturas[adjunto.id] ? (
+          <button type="button" className="hilo-adjunto" onClick={() => setVisor(adjunto)}>
+            Ver imagen: {adjunto.nombre}
+          </button>
+        ) : null}
+        {!esSoloCaptionArchivo && mensaje.contenido ? <div className="hilo-texto">{mensaje.contenido}</div> : null}
       </div>
     );
   }
 
   function composer() {
     const puedeAdjuntarChat = puedeAdjuntarRespuesta || esMio;
+    const puedeEnviar = Boolean(texto.trim() || archivoRespuesta) && !enviandoChat;
     return (
       <div className={`hilo-composer ${puedeAdjuntarChat ? 'hilo-composer-equipo' : ''}`}>
-        <Input.TextArea
-          value={texto}
-          onChange={(evento) => {
-            setTexto(evento.target.value);
-            socketRef.current?.emit('escribiendo', id);
-          }}
-          onPressEnter={(evento) => {
-            if (!evento.shiftKey) {
-              evento.preventDefault();
-              void enviarMensaje();
-            }
-          }}
-          rows={2}
-          placeholder={
-            puedeAdjuntarRespuesta
-              ? 'Escribe la respuesta al solicitante…'
-              : 'Escribe un mensaje o adjunta una evidencia del problema…'
-          }
-        />
-        <div className="hilo-composer-barra">
+        {archivoRespuesta && (
+          <div className="hilo-adjunto-pendiente">
+            {previewAdjunto ? (
+              <img src={previewAdjunto} alt="" className="hilo-adjunto-preview" />
+            ) : (
+              <span className="hilo-adjunto-badge">{archivoRespuesta.name}</span>
+            )}
+            <div>
+              <strong>{archivoRespuesta.name}</strong>
+              <small>{Math.max(1, Math.round(archivoRespuesta.size / 1024))} KB · listo para enviar al chat</small>
+              <button
+                type="button"
+                className="hilo-quitar-archivo"
+                onClick={() => {
+                  elegirArchivoChat(null);
+                }}
+              >
+                Quitar
+              </button>
+            </div>
+          </div>
+        )}
+        <div className="hilo-composer-fila">
           {puedeAdjuntarChat ? (
-            <label className="boton-archivo">
-              {archivoRespuesta ? `Archivo: ${archivoRespuesta.name}` : 'Adjuntar evidencia'}
+            <label className="boton-clip" title="Adjuntar evidencia al chat">
+              📎
               <input
                 type="file"
-                aria-label="Adjuntar evidencia"
+                aria-label="Adjuntar evidencia al chat"
                 accept=".png,.jpg,.jpeg,.pdf,.txt,.webp"
                 onChange={(evento) => {
-                  setArchivoRespuesta(evento.target.files?.[0] ?? null);
+                  elegirArchivoChat(evento.target.files?.[0] ?? null);
                   evento.target.value = '';
                 }}
               />
             </label>
           ) : null}
-          <Button
-            type="primary"
-            onClick={() => void enviarMensaje()}
-            disabled={!texto.trim() && !(esMio && archivoRespuesta)}
-          >
-            {puedeAdjuntarRespuesta ? 'Enviar respuesta' : 'Enviar'}
+          <Input.TextArea
+            value={texto}
+            onChange={(evento) => {
+              setTexto(evento.target.value);
+              socketRef.current?.emit('escribiendo', id);
+            }}
+            onPressEnter={(evento) => {
+              if (!evento.shiftKey) {
+                evento.preventDefault();
+                void enviarMensaje();
+              }
+            }}
+            rows={2}
+            placeholder={
+              archivoRespuesta
+                ? 'Añade un mensaje (opcional) y envía la evidencia…'
+                : puedeAdjuntarRespuesta
+                  ? 'Escribe o adjunta una evidencia para el solicitante…'
+                  : 'Escribe o adjunta una evidencia…'
+            }
+          />
+          <Button type="primary" onClick={() => void enviarMensaje()} disabled={!puedeEnviar} loading={enviandoChat}>
+            Enviar
           </Button>
         </div>
-        {archivoRespuesta && (
-          <button type="button" className="hilo-quitar-archivo" onClick={() => setArchivoRespuesta(null)}>
-            Quitar archivo adjunto
-          </button>
-        )}
+        {puedeAdjuntarChat ? (
+          <p className="hilo-composer-ayuda">
+            Como WhatsApp: puedes enviar solo la imagen, o imagen + texto. El solicitante la ve en el chat al instante.
+          </p>
+        ) : null}
       </div>
     );
   }

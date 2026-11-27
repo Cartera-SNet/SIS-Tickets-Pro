@@ -477,32 +477,10 @@ export class TicketsService {
     return payload;
   }
 
-  private validarPermisoAdjunto(
-    ticket: { solicitante: { id: string } },
-    actor: Principal,
-    mensajeRespuesta: string,
-  ) {
+  private validarPermisoAdjunto(ticket: { solicitante: { id: string } }, actor: Principal) {
     const esSolicitante = ticket.solicitante.id === actor.id;
     const esEquipo = actor.rol === 'TECNICO' || actor.rol === 'ADMINISTRADOR';
-    if (esSolicitante) {
-      if (mensajeRespuesta) {
-        throw new HttpException(
-          { code: 'validation_error', message: 'El solicitante adjunta evidencias desde la pestaña Evidencias, sin respuesta.' },
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-      return { esSolicitante, esEquipo };
-    }
-    if (esEquipo) {
-      if (mensajeRespuesta.length < 1) {
-        throw new HttpException(
-          {
-            code: 'forbidden',
-            message: 'El equipo solo puede adjuntar evidencias al responder al solicitante en la conversación.',
-          },
-          HttpStatus.FORBIDDEN,
-        );
-      }
+    if (esSolicitante || esEquipo) {
       return { esSolicitante, esEquipo };
     }
     throw new HttpException(
@@ -559,7 +537,7 @@ export class TicketsService {
     }
 
     const respuesta = opciones.mensajeRespuesta?.trim() ?? '';
-    const { esEquipo } = this.validarPermisoAdjunto(ticket, actor, respuesta);
+    const { esEquipo, esSolicitante } = this.validarPermisoAdjunto(ticket, actor);
 
     const hash = createHash('sha256').update(archivo.buffer).digest('hex');
     // Copia a ArrayBuffer propio para Prisma Bytes (evita SharedArrayBuffer en tsc).
@@ -567,10 +545,11 @@ export class TicketsService {
     const contenidoBytes = new Uint8Array(copiaContenido);
     contenidoBytes.set(archivo.buffer);
 
+    const nombreLimpio = archivo.originalname.replace(/[^\w.\- ]/g, '_').slice(0, 120);
     const adjunto = await this.prisma.adjunto.create({
       data: {
         ticketId,
-        nombre: archivo.originalname.replace(/[^\w.\- ]/g, '_').slice(0, 120),
+        nombre: nombreLimpio,
         ruta: RUTA_NEON,
         mime: archivo.mimetype || 'application/octet-stream',
         tamano: archivo.size,
@@ -581,52 +560,52 @@ export class TicketsService {
       select: { id: true, nombre: true, tamano: true, mime: true, subidoPorId: true },
     });
 
-    let mensajePayload: {
-      id: string;
-      canal: string;
-      autorTipo: string;
-      autor: string;
-      contenido: string;
-      fecha: Date;
-      ticketId: string;
-      adjuntoId: string | null;
-      adjunto: { id: string; nombre: string; mime: string; tamano: number } | null;
-    } | null = null;
-
-    if (esEquipo && respuesta) {
-      const mensaje = await this.prisma.mensaje.create({
-        data: {
-          ticketId,
-          autorTipo: 'TECNICO',
-          autorId: actor.id,
-          canal: 'WEB',
-          contenido: respuesta,
-          adjuntoId: adjunto.id,
-          estadoEntrega: 'ENTREGADO',
-        },
-        include: { autor: { select: { nombre: true } } },
-      });
-      mensajePayload = {
-        id: mensaje.id,
-        canal: mensaje.canal,
-        autorTipo: mensaje.autorTipo,
-        autor: mensaje.autor?.nombre ?? 'Usuario',
-        contenido: mensaje.contenido,
-        fecha: mensaje.fecha,
+    // Chat estilo WhatsApp: la evidencia viaja siempre como mensaje (con o sin texto).
+    const contenido = respuesta || `📎 ${adjunto.nombre}`;
+    const autorTipo = esEquipo ? 'TECNICO' : 'USUARIO';
+    const mensaje = await this.prisma.mensaje.create({
+      data: {
         ticketId,
+        autorTipo,
+        autorId: actor.id,
+        canal: 'WEB',
+        contenido,
         adjuntoId: adjunto.id,
-        adjunto: {
-          id: adjunto.id,
-          nombre: adjunto.nombre,
-          mime: adjunto.mime ?? 'application/octet-stream',
-          tamano: adjunto.tamano,
-        },
-      };
-      this.tiempo.emitirTicket(ticketId, 'ticket:mensaje', mensajePayload);
+        estadoEntrega: 'ENTREGADO',
+      },
+      include: { autor: { select: { nombre: true } } },
+    });
+    const mensajePayload = {
+      id: mensaje.id,
+      canal: mensaje.canal,
+      autorTipo: mensaje.autorTipo,
+      autor: mensaje.autor?.nombre ?? 'Usuario',
+      contenido: mensaje.contenido,
+      fecha: mensaje.fecha,
+      ticketId,
+      adjuntoId: adjunto.id,
+      adjunto: {
+        id: adjunto.id,
+        nombre: adjunto.nombre,
+        mime: adjunto.mime ?? 'application/octet-stream',
+        tamano: adjunto.tamano,
+      },
+    };
+    this.tiempo.emitirTicket(ticketId, 'ticket:mensaje', mensajePayload);
+    const destinos = new Set<string>();
+    if (ticket.solicitante?.id && ticket.solicitante.id !== actor.id) {
+      destinos.add(ticket.solicitante.id);
+    }
+    const responsableId = (ticket as { responsable?: { id?: string } | null }).responsable?.id;
+    if (responsableId && responsableId !== actor.id) {
+      destinos.add(responsableId);
+    }
+    for (const usuarioId of destinos) {
+      this.tiempo.emitir(usuarioId, 'ticket:mensaje', mensajePayload);
     }
 
     this.tiempo.emitirTicket(ticketId, 'ticket:adjunto', { ...adjunto, ticketId, accion: 'agregado' });
-    return mensajePayload ? { ...adjunto, mensaje: mensajePayload } : adjunto;
+    return { ...adjunto, mensaje: mensajePayload, enviadoEnChat: esEquipo || esSolicitante };
   }
 
   async adjuntar(

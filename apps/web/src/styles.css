@@ -879,6 +879,13 @@ button:focus-visible,
   align-items: stretch;
 }
 
+.hilo-composer-fila {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: end;
+}
+
 .hilo-composer-barra {
   display: flex;
   flex-wrap: wrap;
@@ -894,13 +901,93 @@ button:focus-visible,
 }
 
 .hilo-composer .hilo-quitar-archivo {
-  justify-self: start;
+  display: block;
+  margin-top: 4px;
   border: 0;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   padding: 0;
   text-decoration: underline;
+}
+
+.boton-clip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-card-2);
+  cursor: pointer;
+  font-size: 1.15rem;
+}
+
+.boton-clip input {
+  display: none;
+}
+
+.hilo-adjunto-pendiente {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgb(20 163 163 / 35%);
+  background: rgb(20 163 163 / 10%);
+}
+
+.hilo-adjunto-pendiente strong {
+  display: block;
+}
+
+.hilo-adjunto-pendiente small {
+  color: var(--text-muted);
+}
+
+.hilo-adjunto-preview {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.hilo-adjunto-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  height: 72px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.hilo-media {
+  display: block;
+  width: 100%;
+  max-width: 280px;
+  margin: 6px 0 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.hilo-media img {
+  display: block;
+  width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.hilo-texto {
+  white-space: pre-wrap;
 }
 
 .seguimiento-tarjeta h2 {
